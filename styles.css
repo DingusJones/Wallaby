@@ -566,6 +566,7 @@ a:hover { text-decoration: underline; }
   .position-detail { padding: 10px 12px 12px 38px; }
   .position-detail-row { font-size: 11px; }
   .detail-link { font-size: 10px; padding: 4px 8px; }
+  .position-chevron { display: none !important; }
 }
 
 /* ── RESPONSIVE: DESKTOP WIDE ── */
