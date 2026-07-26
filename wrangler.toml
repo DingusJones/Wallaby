@@ -1,0 +1,7 @@
+name = "wallaby-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Secrets to set via `wrangler secret put`:
+# - ONEINCH_API_KEY
+# - MOBULA_API_KEY

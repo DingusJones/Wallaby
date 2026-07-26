@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Wallaby — Cross-Chain Wallet Positions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🦘</span>
+      <h1>Wallaby</h1>
+    </div>
+    <div class="topbar-right">
+      <span class="net-worth-label">Net Worth</span>
+      <span class="net-worth-value" id="net-worth">$0.00</span>
+    </div>
+  </header>
+
+  <!-- WALLET INPUT BAR -->
+  <section class="wallet-input-bar">
+    <div class="wallet-input-row">
+      <input type="text" id="wallet-address" placeholder="Enter wallet address (EVM or Solana)..." autocomplete="off" spellcheck="false">
+      <select id="chain-select">
+        <option value="auto">Auto-Detect</option>
+        <option value="evm">EVM</option>
+        <option value="solana">Solana</option>
+      </select>
+      <button id="add-wallet-btn" class="btn-primary">Add Wallet</button>
+    </div>
+    <p class="input-hint">Auto-detects chain by address format. Add multiple wallets to track them all.</p>
+  </section>
+
+  <!-- WALLET TABS -->
+  <section class="wallet-tabs-section" id="wallet-tabs-section" style="display:none;">
+    <div class="wallet-tabs" id="wallet-tabs"></div>
+  </section>
+
+  <!-- CHAIN FILTER PILLS -->
+  <section class="chain-filters" id="chain-filters" style="display:none;">
+    <button class="chain-pill active" data-chain="all">All Chains</button>
+  </section>
+
+  <!-- LOADING STATE -->
+  <div class="loading-state" id="loading-state" style="display:none;">
+    <div class="spinner"></div>
+    <p>Hopping across chains...</p>
+  </div>
+
+  <!-- EMPTY STATE -->
+  <div class="empty-state" id="empty-state">
+    <span class="empty-icon">🦘</span>
+    <h2>No wallets yet</h2>
+    <p>Add a wallet address above to see your DeFi positions across all chains.</p>
+  </div>
+
+  <!-- ERROR STATE -->
+  <div class="error-state" id="error-state" style="display:none;">
+    <span class="error-icon">⚠️</span>
+    <p id="error-message">Something went wrong.</p>
+  </div>
+
+  <!-- SUMMARY CARDS -->
+  <section class="summary-section" id="summary-section" style="display:none;">
+    <div class="summary-card">
+      <span class="summary-label">Total Positions</span>
+      <span class="summary-value" id="total-positions">0</span>
+    </div>
+    <div class="summary-card">
+      <span class="summary-label">Chains Active</span>
+      <span class="summary-value" id="chains-active">0</span>
+    </div>
+    <div class="summary-card">
+      <span class="summary-label">Protocols</span>
+      <span class="summary-value" id="protocols-count">0</span>
+    </div>
+    <div class="summary-card">
+      <span class="summary-label">Best APY</span>
+      <span class="summary-value" id="best-apy">—</span>
+    </div>
+  </section>
+
+  <!-- POSITIONS LIST -->
+  <main class="positions-container" id="positions-container" style="display:none;">
+    <!-- Positions render here, grouped by chain -->
+  </main>
+
+  <footer class="footer">
+    <p>Wallaby — Cross-chain DeFi positions viewer. Data from 1inch Portfolio API.</p>
+    <p class="footer-sub">Not financial advice. Always verify positions on the protocol's official site.</p>
+  </footer>
+
+  <script src="app.js?v=1"></script>
+</body>
+</html>
