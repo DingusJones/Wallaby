@@ -118,6 +118,240 @@ function shortenAddress(address) {
 }
 
 // ═══════════════════════════════════════════
+// DEEP LINK BUILDER — links to actual vault/position UIs
+// ═══════════════════════════════════════════
+// Maps Rabby protocol IDs to the protocol's actual UI where you can deposit/withdraw.
+// Falls back to site_url, then block explorer.
+function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, supplyTokens) {
+  const pid = protocolId.toLowerCase();
+
+  // Protocol-specific URL builders — link to the actual vault/position page
+  const links = {
+    // Aave V2/V3 — link to reserve page on Aave UI
+    'aave2': () => `https://app.aave.com/?market_name=proto_mainnet`,
+    'aave3': () => `https://app.aave.com/?market_name=proto_mainnet_v3`,
+    'aave_v3': () => `https://app.aave.com/?market_name=proto_mainnet_v3`,
+
+    // Uniswap — link to the pool on Uniswap UI
+    'uniswap2': () => `https://app.uniswap.org/#/pool`,
+    'uniswap3': () => `https://app.uniswap.org/#/pool`,
+    'uniswap4': () => `https://app.uniswap.org/#/pool`,
+    'base_uniswap2': () => `https://app.uniswap.org/#/pool`,
+    'base_uniswap3': () => `https://app.uniswap.org/#/pool`,
+
+    // Curve — link to the pool page
+    'curve': () => poolAddr ? `https://curve.fi/#/ethereum/pools` : siteUrl,
+
+    // Yearn — link to the vault page
+    'yearn': () => poolAddr ? `https://yearn.fi/vaults/1/${poolAddr}` : `https://yearn.fi/vaults`,
+    'base_yearn3': () => poolAddr ? `https://yearn.fi/vaults/8453/${poolAddr}` : `https://yearn.fi/vaults`,
+    'yearn3': () => poolAddr ? `https://yearn.fi/vaults/1/${poolAddr}` : `https://yearn.fi/vaults`,
+
+    // Lido — link to staking page
+    'lido': () => `https://lido.fi/`,
+    'etherfi': () => `https://app.ether.fi/`,
+
+    // Balancer — link to pool page
+    'balancer': () => poolAddr ? `https://balancer.fi/pools/ethereum/v2/${poolAddr}` : `https://balancer.fi/pools`,
+
+    // Maker/Spark
+    'makerdao': () => `https://app.spark.fi/`,
+    'spark': () => `https://app.spark.fi/`,
+
+    // Sky
+    'sky': () => `https://app.sky.money/`,
+
+    // PancakeSwap
+    'bsc_pancakeswap': () => `https://pancakeswap.finance/pools`,
+
+    // SushiSwap
+    'base_sushiswap3': () => `https://www.sushi.com/pools`,
+    'sushi': () => `https://www.sushi.com/pools`,
+
+    // QuickSwap
+    'matic_quickswap': () => `https://quickswap.exchange/pools`,
+
+    // Convex
+    'convex': () => `https://www.convexfinance.com/`,
+
+    // Compound
+    'compound': () => `https://app.compound.finance/`,
+    'compound3': () => `https://app.compound.finance/`,
+
+    // 1inch
+    '1inch2': () => `https://app.1inch.io/`,
+
+    // TokenSets
+    'tokensets': () => poolAddr ? `https://tokensets.com/set/${poolAddr}` : `https://tokensets.com`,
+
+    // Pangolin
+    'avax_pangolin': () => `https://app.pangolin.exchange/pools`,
+
+    // LFJ (TraderJoe)
+    'avax_traderjoexyz': () => `https://lfj.gg/pools`,
+
+    // Euler
+    'avax_euler2': () => `https://app.euler.finance/vaults`,
+
+    // Shell
+    'shell': () => `https://www.shellprotocol.io/pools`,
+
+    // Element
+    'element': () => `https://app.element.fi/fixedrates/`,
+
+    // Ambire
+    'ambire': () => `https://wallet.ambire.com/`,
+
+    // Sablier
+    'sablier': () => `https://app.sablier.com/`,
+    'matic_sablier': () => `https://app.sablier.com/`,
+
+    // Superfluid
+    'matic_superfluid': () => `https://app.superfluid.org/`,
+    'op_superfluid': () => `https://app.superfluid.org/`,
+    'arb_superfluid': () => `https://app.superfluid.org/`,
+
+    // Terminal
+    'terminal': () => `https://terminal.fi/`,
+
+    // Hedgey
+    'linea_hedgey': () => `https://app.hedgey.finance/`,
+
+    // Firebot
+    'matic_firebot': () => `https://firebot.gg/`,
+
+    // ZetaHub
+    'zeta_zetahub': () => `https://hub.zetachain.com/`,
+
+    // iZUMi
+    'manta_izumi': () => `https://izumi.finance/pools`,
+
+    // DYORSWAP
+    'blast_dyorswap': () => `https://dyorswap.finance/pools`,
+
+    // ShibaSwap
+    'shibaswap': () => `https://shibaswap.com/pools`,
+
+    // Nitro Cartel
+    'arb_nitrocartel': () => `https://nitrocartel.finance/`,
+
+    // clanker
+    'base_clanker': () => `https://www.clanker.world`,
+
+    // ZORA
+    'base_zoraco': () => `https://zora.co/`,
+  };
+
+  // Try protocol-specific link
+  if (links[pid]) {
+    return links[pid]();
+  }
+
+  // Try with adapter_id as fallback (e.g., uniswap2_liquidity_proxy → Uniswap)
+  if (adapterId) {
+    const aid = adapterId.toLowerCase();
+    if (aid.includes('uniswap2') || aid.includes('uniswap3') || aid.includes('uniswap4')) return `https://app.uniswap.org/#/pool`;
+    if (aid.includes('aave')) return `https://app.aave.com/`;
+    if (aid.includes('curve')) return `https://curve.fi/#/ethereum/pools`;
+    if (aid.includes('yearn')) return `https://yearn.fi/vaults`;
+    if (aid.includes('pancakeswap')) return `https://pancakeswap.finance/pools`;
+    if (aid.includes('lending')) return siteUrl || null;
+  }
+
+  // Fall back to protocol site_url
+  return siteUrl || null;
+}
+
+// ═══════════════════════════════════════════
+// DEFILLAMA YIELD ENRICHMENT
+// ═══════════════════════════════════════════
+// Fetch DeFiLlama yields once, match positions to get APY data.
+// Matches by protocol name + supply token symbol.
+let llamaYieldsCache = null;
+
+async function fetchLlamaYields() {
+  if (llamaYieldsCache) return llamaYieldsCache;
+  try {
+    const data = await cachedFetch('https://yields.llama.fi/pools', { cacheKey: 'llama_yields' });
+    const pools = data.data || [];
+    // Build a lookup: { 'project_name': [ { symbol, apy, chain } ] }
+    const lookup = {};
+    pools.forEach(p => {
+      const key = p.project.toLowerCase();
+      if (!lookup[key]) lookup[key] = [];
+      lookup[key].push({
+        symbol: (p.symbol || '').toUpperCase(),
+        apy: p.apy || 0,
+        chain: (p.chain || '').toLowerCase(),
+        tvlUsd: p.tvlUsd || 0,
+      });
+    });
+    llamaYieldsCache = lookup;
+    return lookup;
+  } catch (e) {
+    return {};
+  }
+}
+
+// Match a Rabby position to a DeFiLlama pool to get APY
+function matchApy(yields, protocolName, rabbyChain, supplyTokens) {
+  if (!yields || !protocolName) return null;
+
+  // Map Rabby protocol names to DeFiLlama project names
+  const nameMap = {
+    'aave v2': 'aave-v2',
+    'aave v3': 'aave-v3',
+    'uniswap v2': 'uniswap-v2',
+    'uniswap v3': 'uniswap-v3',
+    'sushiswap v3': 'sushiswap',
+    'pancakeswap': 'pancakeswap',
+    'quickswap': 'quickswap',
+    'curve': 'curve-dex',
+    'yearn v3': 'yearn-finance',
+    'lido': 'lido',
+    'ether.fi': 'ether-fi',
+    'balancer': 'balancer',
+    'compound': 'compound-finance',
+    'convex': 'convex-finance',
+    'sky': 'sky-lending',
+    'maker': 'makerdao',
+  };
+
+  const key = nameMap[protocolName.toLowerCase()] || protocolName.toLowerCase();
+  const pools = yields[key];
+  if (!pools || pools.length === 0) return null;
+
+  // Map Rabby chain to DeFiLlama chain
+  const chainMap = {
+    ethereum: 'ethereum', base: 'base', arbitrum: 'arbitrum',
+    optimism: 'optimism', polygon: 'polygon', bsc: 'bsc',
+    avalanche: 'avalanche', fantom: 'fantom',
+  };
+  const dlChain = chainMap[rabbyChain] || rabbyChain;
+
+  // Try to match by supply token symbol + chain
+  if (supplyTokens && supplyTokens.length > 0) {
+    const symbols = supplyTokens.map(t => t.symbol.toUpperCase());
+    for (const pool of pools) {
+      if (pool.chain === dlChain && symbols.some(s => pool.symbol.includes(s) || s.includes(pool.symbol))) {
+        return pool.apy;
+      }
+    }
+  }
+
+  // Fallback: highest TVL pool on matching chain
+  const chainPools = pools.filter(p => p.chain === dlChain);
+  if (chainPools.length > 0) {
+    chainPools.sort((a, b) => b.tvlUsd - a.tvlUsd);
+    return chainPools[0].apy;
+  }
+
+  // Fallback: highest TVL pool overall
+  pools.sort((a, b) => b.tvlUsd - a.tvlUsd);
+  return pools[0].apy || null;
+}
+
+// ═══════════════════════════════════════════
 // API CALLS — direct from browser (both CORS-enabled)
 // ═══════════════════════════════════════════
 
@@ -223,18 +457,16 @@ async function fetchRabbyPositions(address) {
         symbol: t.symbol, amount: parseFloat(t.amount || 0), price: parseFloat(t.price || 0),
       }));
 
-      // Build deep link to the actual position
-      // Priority: pool contract on block explorer > protocol site_url
+      // Build deep link to the actual vault/position where you can deposit/withdraw
       const poolAddr = pool.id || pool.controller || null;
-      const explorerBase = RABBY_CHAIN_EXPLORER[protocol.chain];
-      let deepLink = siteUrl || null;
-      if (poolAddr && explorerBase) {
-        deepLink = `${explorerBase}${poolAddr}`;
-      }
+      const protocolId = protocol.id || '';
+      const adapterId = pool.adapter_id || '';
+      const deepLink = buildPositionUrl(protocolId, adapterId, protocol.chain, poolAddr, siteUrl, supplyTokens);
 
       positions.push({
         chain,
         protocol: protocolName,
+        protocolId,
         protocolLogo,
         siteUrl,
         tvl,
@@ -247,7 +479,7 @@ async function fetchRabbyPositions(address) {
         debtTokens,
         healthRate: detail.health_rate != null ? parseFloat(detail.health_rate) : null,
         poolAddress: poolAddr,
-        poolAdapter: pool.adapter_id || null,
+        poolAdapter: adapterId,
         url: deepLink,
       });
     });
@@ -455,14 +687,22 @@ function renderSummary(positions, netWorth) {
   const totalUsd = netWorth?.totalUsd || positions.reduce((sum, p) => sum + (p.valueUsd || 0), 0);
   const chains = new Set(positions.map(p => p.chain));
   const protocols = new Set(positions.map(p => p.protocol));
+
+  // Calculate APYs from positions that have apy data
+  const apyValues = positions.map(p => p.apy).filter(a => a != null && a > 0);
   let bestApy = 0;
-  positions.forEach(p => { if (p.apy && p.apy > bestApy) bestApy = p.apy; });
+  let avgApy = 0;
+  if (apyValues.length > 0) {
+    bestApy = Math.max(...apyValues);
+    avgApy = apyValues.reduce((sum, a) => sum + a, 0) / apyValues.length;
+  }
 
   document.getElementById('net-worth').textContent = fmtUsd(totalUsd);
   document.getElementById('total-positions').textContent = positions.length;
   document.getElementById('chains-active').textContent = chains.size;
   document.getElementById('protocols-count').textContent = protocols.size;
   document.getElementById('best-apy').textContent = bestApy > 0 ? `${bestApy.toFixed(2)}%` : '—';
+  document.getElementById('avg-apy').textContent = avgApy > 0 ? `${avgApy.toFixed(2)}%` : '—';
 }
 
 function renderPositions() {
@@ -638,6 +878,15 @@ function renderPositions() {
           </div>`;
       }
 
+      // APY (from DeFiLlama enrichment)
+      if (pos.apy != null && pos.apy > 0) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">APY</span>
+            <span class="detail-value positive">${pos.apy.toFixed(2)}%</span>
+          </div>`;
+      }
+
       // Pool contract address
       if (pos.poolAddress) {
         const shortPool = pos.poolAddress.slice(0, 8) + '...' + pos.poolAddress.slice(-6);
@@ -688,7 +937,6 @@ function renderPositions() {
 
       card.innerHTML = `
         <div class="position-card-header">
-          <button class="position-expand-arrow" title="Expand details">▶</button>
           <div class="position-icon">
             ${logoUrl ? `<img src="${logoUrl}" alt="" onerror="this.style.display='none';this.parentElement.textContent='📦'">` : '📦'}
           </div>
@@ -699,6 +947,8 @@ function renderPositions() {
           </div>
           <div class="position-value">
             <div class="position-amount">${fmtUsd(pos.valueUsd)}</div>
+            ${pos.apy != null && pos.apy > 0 ? `<div class="position-apy">${pos.apy.toFixed(2)}% APY</div>` : ''}
+            ${detailRows || linksHtml ? '<span class="position-chevron">⌄</span>' : ''}
           </div>
         </div>
         ${detailRows || linksHtml ? `
@@ -709,15 +959,16 @@ function renderPositions() {
         ` : ''}
       `;
 
-      // Click to expand/collapse
-      card.addEventListener('click', (e) => {
-        // Don't toggle when clicking links inside expanded view
-        if (e.target.tagName === 'A' || e.target.closest('a')) return;
-        card.classList.toggle('collapsed');
-        card.classList.toggle('expanded');
-        const arrow = card.querySelector('.position-expand-arrow');
-        if (arrow) arrow.textContent = card.classList.contains('expanded') ? '▼' : '▶';
-      });
+      // Click to expand/collapse (only if there's detail to show)
+      if (detailRows || linksHtml) {
+        card.addEventListener('click', (e) => {
+          if (e.target.tagName === 'A' || e.target.closest('a')) return;
+          card.classList.toggle('collapsed');
+          card.classList.toggle('expanded');
+          const chevron = card.querySelector('.position-chevron');
+          if (chevron) chevron.textContent = card.classList.contains('expanded') ? '⌃' : '⌄';
+        });
+      }
 
       group.appendChild(card);
     });
@@ -793,13 +1044,26 @@ async function loadPositionsForWallet(idx) {
         wallet.error = posRes.reason.message;
       }
     } else {
-      // EVM: use Rabby
-      const [posRes, nwRes] = await Promise.allSettled([
+      // EVM: use Rabby + enrich with DeFiLlama APYs
+      const [posRes, nwRes, yieldsRes] = await Promise.allSettled([
         fetchRabbyPositions(wallet.address),
         fetchRabbyNetWorth(wallet.address),
+        fetchLlamaYields(),
       ]);
       wallet.positions = posRes.status === 'fulfilled' ? posRes.value : [];
       wallet.netWorth = nwRes.status === 'fulfilled' ? nwRes.value : null;
+
+      // Enrich positions with APY from DeFiLlama
+      if (yieldsRes.status === 'fulfilled' && wallet.positions.length > 0) {
+        const yields = yieldsRes.value;
+        wallet.positions.forEach(pos => {
+          if (pos.apy == null) {
+            const matchedApy = matchApy(yields, pos.protocol, pos.chain, pos.supplyTokens);
+            if (matchedApy != null) pos.apy = matchedApy;
+          }
+        });
+      }
+
       if (posRes.status === 'rejected') {
         wallet.error = posRes.reason.message;
       }

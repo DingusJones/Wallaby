@@ -280,7 +280,7 @@ a:hover { text-decoration: underline; }
 /* ── SUMMARY CARDS ── */
 .summary-section {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 10px;
   padding: 16px 20px;
   max-width: 720px;
@@ -373,6 +373,10 @@ a:hover { text-decoration: underline; }
 .position-value {
   text-align: right;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 }
 .position-amount {
   font-size: 15px;
@@ -407,16 +411,17 @@ a:hover { text-decoration: underline; }
   gap: 12px;
   padding: 14px;
 }
-.position-expand-arrow {
-  background: none;
-  border: none;
+/* Chevron on the right (replaces left arrow icon) */
+.position-chevron {
   color: var(--text-dim);
-  cursor: pointer;
-  font-size: 12px;
-  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+  margin-top: 4px;
   transition: color 0.2s, transform 0.2s;
+  flex-shrink: 0;
 }
-.position-card:hover .position-expand-arrow { color: var(--accent); }
+.position-card:hover .position-chevron { color: var(--accent); }
+.position-card.expanded .position-chevron { transform: rotate(180deg); }
 .position-card.collapsed .position-detail { display: none; }
 .position-card.expanded .position-detail { display: block; }
 
@@ -543,7 +548,7 @@ a:hover { text-decoration: underline; }
   .chain-filters { padding: 10px 16px; }
 
   .summary-section {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, 1fr) !important;
     padding: 12px 16px;
     gap: 8px;
   }
