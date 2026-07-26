@@ -342,25 +342,7 @@ a:hover { text-decoration: underline; }
   font-variant-numeric: tabular-nums;
 }
 
-/* Position card */
-.position-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 8px;
-  transition: border-color 0.2s;
-  text-decoration: none;
-  color: inherit;
-  cursor: pointer;
-}
-.position-card:hover {
-  border-color: var(--border-light);
-  text-decoration: none;
-}
+/* (position-card styles moved to collapsible section below) */
 .position-icon {
   width: 36px;
   height: 36px;
@@ -404,6 +386,100 @@ a:hover { text-decoration: underline; }
   font-variant-numeric: tabular-nums;
 }
 .position-apy.negative { color: var(--red); }
+
+/* Position card — now collapsible */
+.position-card {
+  padding: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  transition: border-color 0.2s;
+  cursor: pointer;
+  overflow: hidden;
+}
+.position-card:hover {
+  border-color: var(--border-light);
+}
+.position-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+}
+.position-expand-arrow {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: color 0.2s, transform 0.2s;
+}
+.position-card:hover .position-expand-arrow { color: var(--accent); }
+.position-card.collapsed .position-detail { display: none; }
+.position-card.expanded .position-detail { display: block; }
+
+/* Expanded detail section */
+.position-detail {
+  padding: 0 14px 14px 44px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 0;
+}
+.position-detail-grid {
+  display: grid;
+  gap: 6px;
+}
+.position-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 12px;
+}
+.detail-label {
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.detail-value {
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+.detail-value.debt { color: var(--red); }
+.detail-value.reward { color: var(--accent); }
+.detail-value.positive { color: var(--green); }
+.detail-value.negative { color: var(--red); }
+.detail-value.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; }
+
+/* Deep links in expanded view */
+.position-detail-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.detail-link:hover {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  text-decoration: none;
+}
 
 /* Position tags (health, debt, rewards, PnL) */
 .position-tags {
@@ -476,15 +552,15 @@ a:hover { text-decoration: underline; }
 
   .positions-container { padding: 0 16px 32px; }
 
-  .position-card {
-    padding: 12px;
-    gap: 10px;
-  }
+  .position-card-header { padding: 12px; gap: 10px; }
   .position-icon { width: 32px; height: 32px; font-size: 16px; }
   .position-icon img { width: 32px; height: 32px; }
   .position-amount { font-size: 14px; }
   .position-tags { gap: 4px; }
   .position-tags span { font-size: 9px; padding: 1px 5px; }
+  .position-detail { padding: 10px 12px 12px 38px; }
+  .position-detail-row { font-size: 11px; }
+  .detail-link { font-size: 10px; padding: 4px 8px; }
 }
 
 /* ── RESPONSIVE: DESKTOP WIDE ── */

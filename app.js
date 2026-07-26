@@ -13,25 +13,53 @@
 const RABBY_API = 'https://api.rabby.io';
 const MOBULA_API = 'https://demo-api.mobula.io/api';
 
+// Cache TTL in ms (2 minutes)
+const CACHE_TTL = 2 * 60 * 1000;
+// Max retries on 429
+const MAX_RETRIES = 3;
+// Base delay between retries (exponential backoff)
+const RETRY_BASE_DELAY = 2000;
+
 const CHAIN_META = {
-  ethereum:  { name: 'Ethereum',  icon: '🔷', color: '#627eea' },
-  base:      { name: 'Base',      icon: '🔵', color: '#0052ff' },
-  arbitrum:  { name: 'Arbitrum',  icon: '🟦', color: '#28a0f0' },
-  optimism:  { name: 'Optimism',  icon: '🔴', color: '#ff0420' },
-  polygon:   { name: 'Polygon',   icon: '🟣', color: '#8247e5' },
-  bsc:       { name: 'BNB Chain', icon: '🟡', color: '#f0b90b' },
-  avalanche: { name: 'Avalanche', icon: '🔺', color: '#e84142' },
-  fantom:    { name: 'Fantom',    icon: '👻', color: '#1969ff' },
-  linea:     { name: 'Linea',     icon: '⚫', color: '#61dfff' },
-  scroll:    { name: 'Scroll',    icon: '📜', color: '#f0f0f0' },
-  blast:     { name: 'Blast',     icon: '🟡', color: '#ffcf00' },
-  zksync:    { name: 'zkSync',    icon: '⚪', color: '#1e69ff' },
-  zora:      { name: 'Zora',      icon: '⚪', color: '#444' },
-  manta:     { name: 'Manta',    icon: '🔵', color: '#00b8ff' },
-  moonbeam:  { name: 'Moonbeam',  icon: '🌙', color: '#ff4757' },
-  celo:      { name: 'Celo',     icon: '🟡', color: '#fbcc5c' },
-  gnosis:    { name: 'Gnosis',   icon: '🟢', color: '#3e6957' },
-  solana:    { name: 'Solana',   icon: '🟣', color: '#9945ff' },
+  ethereum:  { name: 'Ethereum',  icon: '🔷', color: '#627eea', explorer: 'https://etherscan.io/address/' },
+  base:      { name: 'Base',      icon: '🔵', color: '#0052ff', explorer: 'https://basescan.org/address/' },
+  arbitrum:  { name: 'Arbitrum',  icon: '🟦', color: '#28a0f0', explorer: 'https://arbiscan.io/address/' },
+  optimism:  { name: 'Optimism',  icon: '🔴', color: '#ff0420', explorer: 'https://optimistic.etherscan.io/address/' },
+  polygon:   { name: 'Polygon',   icon: '🟣', color: '#8247e5', explorer: 'https://polygonscan.com/address/' },
+  bsc:       { name: 'BNB Chain', icon: '🟡', color: '#f0b90b', explorer: 'https://bscscan.com/address/' },
+  avalanche: { name: 'Avalanche', icon: '🔺', color: '#e84142', explorer: 'https://snowtrace.io/address/' },
+  fantom:    { name: 'Fantom',    icon: '👻', color: '#1969ff', explorer: 'https://ftmscan.com/address/' },
+  linea:     { name: 'Linea',     icon: '⚫', color: '#61dfff', explorer: 'https://lineascan.build/address/' },
+  scroll:    { name: 'Scroll',    icon: '📜', color: '#f0f0f0', explorer: 'https://scrollscan.com/address/' },
+  blast:     { name: 'Blast',     icon: '🟡', color: '#ffcf00', explorer: 'https://blastscan.io/address/' },
+  zksync:    { name: 'zkSync',    icon: '⚪', color: '#1e69ff', explorer: 'https://explorer.zksync.io/address/' },
+  zora:      { name: 'Zora',      icon: '⚪', color: '#444',    explorer: 'https://explorer.zora.energy/address/' },
+  manta:     { name: 'Manta',    icon: '🔵', color: '#00b8ff', explorer: 'https://pacific-explorer.manta.network/address/' },
+  moonbeam:  { name: 'Moonbeam',  icon: '🌙', color: '#ff4757', explorer: 'https://moonbeam.moonscan.io/address/' },
+  celo:      { name: 'Celo',     icon: '🟡', color: '#fbcc5c', explorer: 'https://celoscan.io/address/' },
+  gnosis:    { name: 'Gnosis',   icon: '🟢', color: '#3e6957', explorer: 'https://gnosisscan.io/address/' },
+  solana:    { name: 'Solana',   icon: '🟣', color: '#9945ff', explorer: 'https://solscan.io/account/' },
+};
+
+// Rabby chain ID → explorer URL for pool contract links
+const RABBY_CHAIN_EXPLORER = {
+  eth: 'https://etherscan.io/address/',
+  base: 'https://basescan.org/address/',
+  arb: 'https://arbiscan.io/address/',
+  op: 'https://optimistic.etherscan.io/address/',
+  matic: 'https://polygonscan.com/address/',
+  bsc: 'https://bscscan.com/address/',
+  avax: 'https://snowtrace.io/address/',
+  ftm: 'https://ftmscan.com/address/',
+  linea: 'https://lineascan.build/address/',
+  scroll: 'https://scrollscan.com/address/',
+  blast: 'https://blastscan.io/address/',
+  era: 'https://explorer.zksync.io/address/',
+  zora: 'https://explorer.zora.energy/address/',
+  manta: 'https://pacific-explorer.manta.network/address/',
+  moonbeam: 'https://moonbeam.moonscan.io/address/',
+  celo: 'https://celoscan.io/address/',
+  gnosis: 'https://gnosisscan.io/address/',
 };
 
 // Rabby chain ID → our chain key
@@ -93,14 +121,68 @@ function shortenAddress(address) {
 // API CALLS — direct from browser (both CORS-enabled)
 // ═══════════════════════════════════════════
 
+// Rate-limited fetch with caching + exponential backoff retry.
+// Caches responses in localStorage with TTL to avoid hammering APIs.
+// On 429, retries with exponential backoff (2s, 4s, 8s).
+async function cachedFetch(url, { cacheKey, skipCache = false } = {}) {
+  // Check cache first
+  if (cacheKey && !skipCache) {
+    try {
+      const cached = localStorage.getItem(`wallaby_cache_${cacheKey}`);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_TTL) {
+          return data;
+        }
+      }
+    } catch (e) { /* cache miss, continue to fetch */ }
+  }
+
+  let lastError;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delay = RETRY_BASE_DELAY * Math.pow(2, attempt - 1);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      // Cache the response
+      if (cacheKey) {
+        try {
+          localStorage.setItem(`wallaby_cache_${cacheKey}`, JSON.stringify({ data, timestamp: Date.now() }));
+        } catch (e) { /* localStorage might be full, skip caching */ }
+      }
+      return data;
+    }
+
+    if (res.status === 429) {
+      lastError = new Error('Rate limited by API. Retrying...');
+      continue; // retry with backoff
+    }
+
+    // Non-429 error — don't retry
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  // All retries exhausted — try to return stale cache
+  if (cacheKey) {
+    try {
+      const cached = localStorage.getItem(`wallaby_cache_${cacheKey}`);
+      if (cached) {
+        const { data } = JSON.parse(cached);
+        return data; // return stale data rather than failing
+      }
+    } catch (e) { /* no stale cache */ }
+  }
+
+  throw lastError || new Error('Max retries exceeded');
+}
+
 // EVM: Rabby API — full DeFi positions
 async function fetchRabbyPositions(address) {
-  const res = await fetch(`${RABBY_API}/v1/user/complex_protocol_list?id=${encodeURIComponent(address)}`);
-  if (!res.ok) {
-    if (res.status === 429) throw new Error('Rabby API rate limited. Wait a moment and try again.');
-    throw new Error(`Rabby API error: ${res.status}`);
-  }
-  const data = await res.json();
+  const data = await cachedFetch(`${RABBY_API}/v1/user/complex_protocol_list?id=${encodeURIComponent(address)}`, { cacheKey: `rabby_pos_${address}` });
   const positions = [];
 
   (data || []).forEach(protocol => {
@@ -114,6 +196,7 @@ async function fetchRabbyPositions(address) {
       const stats = item.stats || {};
       const detail = item.detail || {};
       const detailTypes = item.detail_types || [];
+      const pool = item.pool || {};
 
       // Determine position type
       let posType = item.name || 'Position';
@@ -140,6 +223,15 @@ async function fetchRabbyPositions(address) {
         symbol: t.symbol, amount: parseFloat(t.amount || 0), price: parseFloat(t.price || 0),
       }));
 
+      // Build deep link to the actual position
+      // Priority: pool contract on block explorer > protocol site_url
+      const poolAddr = pool.id || pool.controller || null;
+      const explorerBase = RABBY_CHAIN_EXPLORER[protocol.chain];
+      let deepLink = siteUrl || null;
+      if (poolAddr && explorerBase) {
+        deepLink = `${explorerBase}${poolAddr}`;
+      }
+
       positions.push({
         chain,
         protocol: protocolName,
@@ -154,7 +246,9 @@ async function fetchRabbyPositions(address) {
         rewardTokens,
         debtTokens,
         healthRate: detail.health_rate != null ? parseFloat(detail.health_rate) : null,
-        url: siteUrl,
+        poolAddress: poolAddr,
+        poolAdapter: pool.adapter_id || null,
+        url: deepLink,
       });
     });
   });
@@ -164,69 +258,73 @@ async function fetchRabbyPositions(address) {
 
 // EVM: Rabby API — total balance
 async function fetchRabbyNetWorth(address) {
-  const res = await fetch(`${RABBY_API}/v1/user/total_balance?id=${encodeURIComponent(address)}`);
-  if (!res.ok) return { totalUsd: 0, chainBreakdown: {} };
-  const data = await res.json();
-  const chainBreakdown = {};
-  (data.chain_list || []).forEach(c => {
-    if (c.usd_value > 0) {
-      const key = RABBY_CHAIN_MAP[c.id] || c.id;
-      chainBreakdown[key] = c.usd_value;
-    }
-  });
-  return {
-    totalUsd: data.total_usd_value || 0,
-    chainBreakdown,
-  };
+  try {
+    const data = await cachedFetch(`${RABBY_API}/v1/user/total_balance?id=${encodeURIComponent(address)}`, { cacheKey: `rabby_nw_${address}` });
+    const chainBreakdown = {};
+    (data.chain_list || []).forEach(c => {
+      if (c.usd_value > 0) {
+        const key = RABBY_CHAIN_MAP[c.id] || c.id;
+        chainBreakdown[key] = c.usd_value;
+      }
+    });
+    return { totalUsd: data.total_usd_value || 0, chainBreakdown };
+  } catch (e) {
+    return { totalUsd: 0, chainBreakdown: {} };
+  }
 }
 
 // Solana: Mobula API — token portfolio with PnL
+// NOTE: Mobula demo API is flaky with some Solana addresses (400/500 errors).
+// We catch gracefully and return empty positions rather than crashing.
 async function fetchMobulaPositions(address) {
-  const res = await fetch(`${MOBULA_API}/1/wallet/portfolio?wallet=${encodeURIComponent(address)}&blockchains=solana`);
-  if (!res.ok) throw new Error(`Mobula API error: ${res.status}`);
-  const json = await res.json();
-  const data = json.data || json;
-  const positions = [];
+  try {
+    const data = await cachedFetch(`${MOBULA_API}/1/wallet/portfolio?wallet=${encodeURIComponent(address)}&blockchains=solana`, { cacheKey: `mobula_pos_${address}` });
+    const d = data.data || data;
+    const positions = [];
 
-  (data.assets || []).forEach(asset => {
-    const token = asset.asset || {};
-    const balance = parseFloat(asset.token_balance || 0);
-    const valueUsd = parseFloat(asset.estimated_balance || 0);
+    (d.assets || []).forEach(asset => {
+      const token = asset.asset || {};
+      const balance = parseFloat(asset.token_balance || 0);
+      const valueUsd = parseFloat(asset.estimated_balance || 0);
 
-    // Skip dust (< $0.01)
-    if (valueUsd < 0.01) return;
+      // Skip dust (< $0.01)
+      if (valueUsd < 0.01) return;
 
-    positions.push({
-      chain: 'solana',
-      protocol: token.name || 'Solana Token',
-      protocolLogo: token.logo || null,
-      siteUrl: null,
-      tvl: 0,
-      type: 'Holdings',
-      valueUsd,
-      amount: balance,
-      token: token.symbol || '',
-      price: parseFloat(asset.price || 0),
-      realizedPnl: parseFloat(asset.realized_pnl || 0),
-      unrealizedPnl: parseFloat(asset.unrealized_pnl || 0),
-      url: null,
+      positions.push({
+        chain: 'solana',
+        protocol: token.name || 'Solana Token',
+        protocolLogo: token.logo || null,
+        siteUrl: null,
+        tvl: 0,
+        type: 'Holdings',
+        valueUsd,
+        amount: balance,
+        token: token.symbol || '',
+        price: parseFloat(asset.price || 0),
+        realizedPnl: parseFloat(asset.realized_pnl || 0),
+        unrealizedPnl: parseFloat(asset.unrealized_pnl || 0),
+        url: `https://solscan.io/account/${encodeURIComponent(address)}`,
+      });
     });
-  });
 
-  return positions;
+    return positions;
+  } catch (e) {
+    // Mobula might return 400/500 for some Solana addresses — don't crash
+    console.log('Mobula fetch failed for', address, e.message);
+    return [];
+  }
 }
 
 // Solana: Mobula API — net worth
 async function fetchMobulaNetWorth(address) {
-  const res = await fetch(`${MOBULA_API}/1/wallet/portfolio?wallet=${encodeURIComponent(address)}&blockchains=solana`);
-  if (!res.ok) return { totalUsd: 0, chainBreakdown: {} };
-  const json = await res.json();
-  const data = json.data || json;
-  const totalUsd = data.total_wallet_balance || 0;
-  return {
-    totalUsd,
-    chainBreakdown: { solana: totalUsd },
-  };
+  try {
+    const data = await cachedFetch(`${MOBULA_API}/1/wallet/portfolio?wallet=${encodeURIComponent(address)}&blockchains=solana`, { cacheKey: `mobula_nw_${address}` });
+    const d = data.data || data;
+    const totalUsd = d.total_wallet_balance || 0;
+    return { totalUsd, chainBreakdown: { solana: totalUsd } };
+  } catch (e) {
+    return { totalUsd: 0, chainBreakdown: {} };
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -379,8 +477,9 @@ function renderPositions() {
   if (positions.length === 0) {
     showState('empty');
     document.querySelector('.empty-state h2').textContent = 'No positions found';
-    document.querySelector('.empty-state p').textContent =
-      'This wallet has no DeFi positions, or the data is still loading.';
+    document.querySelector('.empty-state p').textContent = wallet.error
+      ? wallet.error
+      : 'This wallet has no DeFi positions, or the data is still loading.';
     return;
   }
 
@@ -427,11 +526,13 @@ function renderPositions() {
     chainPositions.sort((a, b) => (b.valueUsd || 0) - (a.valueUsd || 0));
 
     chainPositions.forEach(pos => {
-      const card = document.createElement('a');
-      card.className = 'position-card';
-      const logoUrl = pos.protocolLogo || null;
+      const card = document.createElement('div');
+      card.className = 'position-card collapsed';
 
-      // Build token detail line
+      const logoUrl = pos.protocolLogo || null;
+      const meta = CHAIN_META[pos.chain] || CHAIN_META[chain];
+
+      // ── Collapsed view: protocol name, type, value ──
       let tokenDetail = '';
       if (pos.supplyTokens && pos.supplyTokens.length > 0) {
         tokenDetail = fmtTokenList(pos.supplyTokens);
@@ -439,7 +540,6 @@ function renderPositions() {
         tokenDetail = `${fmtTokenAmount(pos.amount || 0)} ${pos.token}`;
       }
 
-      // Health rate for lending positions
       let healthHtml = '';
       if (pos.healthRate != null && pos.healthRate > 0) {
         const hr = pos.healthRate > 1e30 ? '∞' : (pos.healthRate / 1e18).toFixed(2);
@@ -447,19 +547,16 @@ function renderPositions() {
         healthHtml = `<span class="position-health ${hrClass}">Health ${hr}</span>`;
       }
 
-      // Debt indicator
       let debtHtml = '';
       if (pos.debtUsd && pos.debtUsd > 0) {
         debtHtml = `<span class="position-debt">Debt ${fmtUsd(pos.debtUsd)}</span>`;
       }
 
-      // Reward tokens indicator
       let rewardHtml = '';
       if (pos.rewardTokens && pos.rewardTokens.length > 0) {
         rewardHtml = `<span class="position-rewards">🎁 ${pos.rewardTokens.length} reward</span>`;
       }
 
-      // PnL for Solana/Mobula positions
       let pnlHtml = '';
       if (pos.realizedPnl != null || pos.unrealizedPnl != null) {
         const totalPnl = (pos.realizedPnl || 0) + (pos.unrealizedPnl || 0);
@@ -468,25 +565,159 @@ function renderPositions() {
         pnlHtml = `<span class="position-pnl ${pnlClass}">PnL ${sign}${fmtUsd(Math.abs(totalPnl))}</span>`;
       }
 
+      // ── Expanded view: detailed position data ──
+      let detailRows = '';
+
+      // Supply tokens breakdown
+      if (pos.supplyTokens && pos.supplyTokens.length > 0) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Supply</span>
+            <span class="detail-value">${pos.supplyTokens.map(t => `${fmtTokenAmount(t.amount)} ${t.symbol} ($${(t.amount * t.price).toFixed(2)})`).join('<br>')}</span>
+          </div>`;
+      }
+
+      // Debt tokens breakdown
+      if (pos.debtTokens && pos.debtTokens.length > 0) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Debt</span>
+            <span class="detail-value debt">${pos.debtTokens.map(t => `${fmtTokenAmount(t.amount)} ${t.symbol} ($${(t.amount * t.price).toFixed(2)})`).join('<br>')}</span>
+          </div>`;
+      }
+
+      // Reward tokens breakdown
+      if (pos.rewardTokens && pos.rewardTokens.length > 0) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Rewards</span>
+            <span class="detail-value reward">${pos.rewardTokens.map(t => `${fmtTokenAmount(t.amount)} ${t.symbol} ($${(t.amount * t.price).toFixed(2)})`).join('<br>')}</span>
+          </div>`;
+      }
+
+      // Token holdings (Solana)
+      if (pos.token && pos.amount) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Balance</span>
+            <span class="detail-value">${fmtTokenAmount(pos.amount)} ${pos.token}</span>
+          </div>`;
+      }
+
+      if (pos.price) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Price</span>
+            <span class="detail-value">$${pos.price.toFixed(pos.price < 1 ? 6 : 2)}</span>
+          </div>`;
+      }
+
+      // Asset vs debt vs net
+      if (pos.assetUsd != null && pos.assetUsd > 0) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Asset Value</span>
+            <span class="detail-value">${fmtUsd(pos.assetUsd)}</span>
+          </div>`;
+      }
+
+      if (pos.debtUsd != null && pos.debtUsd > 0) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Debt Value</span>
+            <span class="detail-value debt">${fmtUsd(pos.debtUsd)}</span>
+          </div>`;
+      }
+
+      if (pos.healthRate != null && pos.healthRate > 0) {
+        const hr = pos.healthRate > 1e30 ? '∞' : (pos.healthRate / 1e18).toFixed(2);
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Health Rate</span>
+            <span class="detail-value">${hr}</span>
+          </div>`;
+      }
+
+      // Pool contract address
+      if (pos.poolAddress) {
+        const shortPool = pos.poolAddress.slice(0, 8) + '...' + pos.poolAddress.slice(-6);
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Pool Contract</span>
+            <span class="detail-value mono">${shortPool}</span>
+          </div>`;
+      }
+
+      // TVL of the protocol
+      if (pos.tvl && pos.tvl > 0) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Protocol TVL</span>
+            <span class="detail-value">${fmtUsd(pos.tvl)}</span>
+          </div>`;
+      }
+
+      // PnL breakdown (Solana)
+      if (pos.realizedPnl != null || pos.unrealizedPnl != null) {
+        if (pos.realizedPnl) {
+          const cls = pos.realizedPnl >= 0 ? 'positive' : 'negative';
+          detailRows += `
+            <div class="position-detail-row">
+              <span class="detail-label">Realized PnL</span>
+              <span class="detail-value ${cls}">${pos.realizedPnl >= 0 ? '+' : ''}${fmtUsd(pos.realizedPnl)}</span>
+            </div>`;
+        }
+        if (pos.unrealizedPnl) {
+          const cls = pos.unrealizedPnl >= 0 ? 'positive' : 'negative';
+          detailRows += `
+            <div class="position-detail-row">
+              <span class="detail-label">Unrealized PnL</span>
+              <span class="detail-value ${cls}">${pos.unrealizedPnl >= 0 ? '+' : ''}${fmtUsd(pos.unrealizedPnl)}</span>
+            </div>`;
+        }
+      }
+
+      // Deep links
+      let linksHtml = '';
+      if (pos.url) {
+        linksHtml += `<a href="${pos.url}" target="_blank" rel="noopener noreferrer" class="detail-link">View Position ↗</a>`;
+      }
+      if (pos.siteUrl && pos.url !== pos.siteUrl) {
+        linksHtml += `<a href="${pos.siteUrl}" target="_blank" rel="noopener noreferrer" class="detail-link">Protocol Site ↗</a>`;
+      }
+
       card.innerHTML = `
-        <div class="position-icon">
-          ${logoUrl ? `<img src="${logoUrl}" alt="" onerror="this.style.display='none';this.parentElement.textContent='📦'">` : '📦'}
+        <div class="position-card-header">
+          <button class="position-expand-arrow" title="Expand details">▶</button>
+          <div class="position-icon">
+            ${logoUrl ? `<img src="${logoUrl}" alt="" onerror="this.style.display='none';this.parentElement.textContent='📦'">` : '📦'}
+          </div>
+          <div class="position-info">
+            <div class="position-protocol">${pos.protocol || 'Unknown'}</div>
+            <div class="position-type">${pos.type || 'Position'}${tokenDetail ? ' · ' + tokenDetail : ''}</div>
+            <div class="position-tags">${healthHtml}${debtHtml}${rewardHtml}${pnlHtml}</div>
+          </div>
+          <div class="position-value">
+            <div class="position-amount">${fmtUsd(pos.valueUsd)}</div>
+          </div>
         </div>
-        <div class="position-info">
-          <div class="position-protocol">${pos.protocol || 'Unknown'}</div>
-          <div class="position-type">${pos.type || 'Position'}${tokenDetail ? ' · ' + tokenDetail : ''}</div>
-          <div class="position-tags">${healthHtml}${debtHtml}${rewardHtml}${pnlHtml}</div>
-        </div>
-        <div class="position-value">
-          <div class="position-amount">${fmtUsd(pos.valueUsd)}</div>
-        </div>
+        ${detailRows || linksHtml ? `
+          <div class="position-detail">
+            ${detailRows ? `<div class="position-detail-grid">${detailRows}</div>` : ''}
+            ${linksHtml ? `<div class="position-detail-links">${linksHtml}</div>` : ''}
+          </div>
+        ` : ''}
       `;
 
-      if (pos.url) {
-        card.href = pos.url;
-        card.target = '_blank';
-        card.rel = 'noopener noreferrer';
-      }
+      // Click to expand/collapse
+      card.addEventListener('click', (e) => {
+        // Don't toggle when clicking links inside expanded view
+        if (e.target.tagName === 'A' || e.target.closest('a')) return;
+        card.classList.toggle('collapsed');
+        card.classList.toggle('expanded');
+        const arrow = card.querySelector('.position-expand-arrow');
+        if (arrow) arrow.textContent = card.classList.contains('expanded') ? '▼' : '▶';
+      });
 
       group.appendChild(card);
     });
