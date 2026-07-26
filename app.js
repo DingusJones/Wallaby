@@ -1,42 +1,46 @@
 /* Wallaby — Cross-chain wallet position viewer
-   Main app logic: wallet management, API calls (via CF Worker proxy), position rendering.
+   Main app logic: wallet management, direct API calls, position rendering.
    
-   Data sources:
+   Data sources (both CORS-enabled, called directly from browser — no proxy needed):
    - EVM: Rabby/DeBank API (api.rabby.io) — free, no key, 60+ chains, full DeFi positions
-   - Solana: Mobula API — free demo, token holdings + PnL (PLACEHOLDER — upgrade when better free API surfaces)
-   
-   API key reminder: Mobula is a placeholder for Solana coverage. When a better free
-   Solana DeFi position API becomes available, swap fetchMobulaPositions() in worker.js.
+   - Solana: Mobula demo API (demo-api.mobula.io) — free, token holdings + PnL
+     (PLACEHOLDER — upgrade when a better free Solana DeFi API surfaces)
 */
 
 // ═══════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════
-const CONFIG = {
-  // Cloudflare Worker proxy URL — set this after deploying the worker
-  proxyUrl: '', // e.g., 'https://wallaby-proxy.your-subdomain.workers.dev'
+const RABBY_API = 'https://api.rabby.io';
+const MOBULA_API = 'https://demo-api.mobula.io/api';
 
-  // Chain display metadata (Rabby chain IDs mapped to display names)
-  chainMeta: {
-    ethereum:  { name: 'Ethereum',  icon: '🔷', color: '#627eea', explorer: 'https://etherscan.io/address/' },
-    base:      { name: 'Base',      icon: '🔵', color: '#0052ff', explorer: 'https://basescan.org/address/' },
-    arbitrum:  { name: 'Arbitrum',  icon: '🟦', color: '#28a0f0', explorer: 'https://arbiscan.io/address/' },
-    optimism:  { name: 'Optimism',  icon: '🔴', color: '#ff0420', explorer: 'https://optimistic.etherscan.io/address/' },
-    polygon:   { name: 'Polygon',   icon: '🟣', color: '#8247e5', explorer: 'https://polygonscan.com/address/' },
-    bsc:       { name: 'BNB Chain', icon: '🟡', color: '#f0b90b', explorer: 'https://bscscan.com/address/' },
-    avalanche: { name: 'Avalanche', icon: '🔴', color: '#e84142', explorer: 'https://snowtrace.io/address/' },
-    fantom:    { name: 'Fantom',    icon: '🔵', color: '#1969ff', explorer: 'https://ftmscan.com/address/' },
-    linea:     { name: 'Linea',     icon: '⚫', color: '#61dfff', explorer: 'https://lineascan.build/address/' },
-    scroll:    { name: 'Scroll',   icon: '⚫', color: '#fffnfn', explorer: 'https://scrollscan.com/address/' },
-    blast:     { name: 'Blast',     icon: '🟡', color: '#ffcf00', explorer: 'https://blastscan.io/address/' },
-    zksync:    { name: 'zkSync',    icon: '⚪', color: '#1e69ff', explorer: 'https://explorer.zksync.io/address/' },
-    zora:      { name: 'Zora',      icon: '⚪', color: '#000000', explorer: 'https://explorer.zora.energy/address/' },
-    manta:     { name: 'Manta',    icon: '🔵', color: '#00b8ff', explorer: 'https://pacific-explorer.manta.network/address/' },
-    moonbeam:  { name: 'Moonbeam',  icon: '🔵', color: '#ff4757', explorer: 'https://moonbeam.moonscan.io/address/' },
-    celo:      { name: 'Celo',     icon: '🟡', color: '#fbcc5c', explorer: 'https://celoscan.io/address/' },
-    gnosis:    { name: 'Gnosis',   icon: '🟢', color: '#3e6957', explorer: 'https://gnosisscan.io/address/' },
-    solana:    { name: 'Solana',   icon: '🟣', color: '#9945ff', explorer: 'https://solscan.io/account/' },
-  },
+const CHAIN_META = {
+  ethereum:  { name: 'Ethereum',  icon: '🔷', color: '#627eea' },
+  base:      { name: 'Base',      icon: '🔵', color: '#0052ff' },
+  arbitrum:  { name: 'Arbitrum',  icon: '🟦', color: '#28a0f0' },
+  optimism:  { name: 'Optimism',  icon: '🔴', color: '#ff0420' },
+  polygon:   { name: 'Polygon',   icon: '🟣', color: '#8247e5' },
+  bsc:       { name: 'BNB Chain', icon: '🟡', color: '#f0b90b' },
+  avalanche: { name: 'Avalanche', icon: '🔺', color: '#e84142' },
+  fantom:    { name: 'Fantom',    icon: '👻', color: '#1969ff' },
+  linea:     { name: 'Linea',     icon: '⚫', color: '#61dfff' },
+  scroll:    { name: 'Scroll',    icon: '📜', color: '#f0f0f0' },
+  blast:     { name: 'Blast',     icon: '🟡', color: '#ffcf00' },
+  zksync:    { name: 'zkSync',    icon: '⚪', color: '#1e69ff' },
+  zora:      { name: 'Zora',      icon: '⚪', color: '#444' },
+  manta:     { name: 'Manta',    icon: '🔵', color: '#00b8ff' },
+  moonbeam:  { name: 'Moonbeam',  icon: '🌙', color: '#ff4757' },
+  celo:      { name: 'Celo',     icon: '🟡', color: '#fbcc5c' },
+  gnosis:    { name: 'Gnosis',   icon: '🟢', color: '#3e6957' },
+  solana:    { name: 'Solana',   icon: '🟣', color: '#9945ff' },
+};
+
+// Rabby chain ID → our chain key
+const RABBY_CHAIN_MAP = {
+  eth: 'ethereum', bsc: 'bsc', arb: 'arbitrum', op: 'optimism',
+  base: 'base', matic: 'polygon', avax: 'avalanche', ftm: 'fantom',
+  linea: 'linea', scroll: 'scroll', blast: 'blast', era: 'zksync',
+  zora: 'zora', manta: 'manta', moonbeam: 'moonbeam', celo: 'celo',
+  gnosis: 'gnosis', core: 'core', xdai: 'gnosis',
 };
 
 // ═══════════════════════════════════════════
@@ -48,11 +52,11 @@ const state = {
   activeChainFilter: 'all',
 };
 
+const STORAGE_KEY = 'wallaby_wallets';
+
 // ═══════════════════════════════════════════
 // STORAGE
 // ═══════════════════════════════════════════
-const STORAGE_KEY = 'wallaby_wallets';
-
 function loadWallets() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -62,9 +66,7 @@ function loadWallets() {
 
 function saveWallets() {
   const toSave = state.wallets.map(w => ({
-    address: w.address,
-    chain: w.chain,
-    label: w.label || '',
+    address: w.address, chain: w.chain, label: w.label || '',
   }));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 }
@@ -74,7 +76,9 @@ function saveWallets() {
 // ═══════════════════════════════════════════
 function detectChain(address) {
   const addr = address.trim();
+  // Solana: base58, 32-44 chars, doesn't start with 0x
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return 'solana';
+  // EVM: 0x + 40 hex chars
   if (/^0x[a-fA-F0-9]{40}$/.test(addr)) return 'evm';
   return null;
 }
@@ -86,32 +90,143 @@ function shortenAddress(address) {
 }
 
 // ═══════════════════════════════════════════
-// API CALLS (via Cloudflare Worker proxy)
+// API CALLS — direct from browser (both CORS-enabled)
 // ═══════════════════════════════════════════
-async function fetchPositions(wallet) {
-  if (!CONFIG.proxyUrl) throw new Error('No proxy URL configured. Deploy the Cloudflare Worker first.');
-  const params = new URLSearchParams({ address: wallet.address });
-  const res = await fetch(`${CONFIG.proxyUrl}/positions?${params}`);
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+
+// EVM: Rabby API — full DeFi positions
+async function fetchRabbyPositions(address) {
+  const res = await fetch(`${RABBY_API}/v1/user/complex_protocol_list?id=${encodeURIComponent(address)}`);
+  if (!res.ok) {
+    if (res.status === 429) throw new Error('Rabby API rate limited. Wait a moment and try again.');
+    throw new Error(`Rabby API error: ${res.status}`);
+  }
   const data = await res.json();
-  return data.positions || [];
+  const positions = [];
+
+  (data || []).forEach(protocol => {
+    const chain = RABBY_CHAIN_MAP[protocol.chain] || protocol.chain || 'unknown';
+    const protocolName = protocol.name || 'Unknown';
+    const protocolLogo = protocol.logo_url || null;
+    const siteUrl = protocol.site_url || null;
+    const tvl = protocol.tvl || 0;
+
+    (protocol.portfolio_item_list || []).forEach(item => {
+      const stats = item.stats || {};
+      const detail = item.detail || {};
+      const detailTypes = item.detail_types || [];
+
+      // Determine position type
+      let posType = item.name || 'Position';
+      if (detailTypes.includes('lending')) posType = 'Lending';
+      else if (detailTypes.includes('yield')) posType = 'Yield';
+      else if (detailTypes.includes('staking')) posType = 'Staking';
+      else if (detailTypes.includes('farming')) posType = 'Farming';
+      else if (detailTypes.length > 0) {
+        posType = detailTypes[0].charAt(0).toUpperCase() + detailTypes[0].slice(1);
+      }
+
+      // Extract supply tokens
+      const supplyTokens = (detail.supply_token_list || []).map(t => ({
+        symbol: t.symbol, amount: parseFloat(t.amount || 0), price: parseFloat(t.price || 0),
+      }));
+
+      // Extract reward tokens
+      const rewardTokens = (detail.reward_token_list || []).map(t => ({
+        symbol: t.symbol, amount: parseFloat(t.amount || 0), price: parseFloat(t.price || 0),
+      }));
+
+      // Extract debt tokens
+      const debtTokens = (detail.debt_token_list || []).map(t => ({
+        symbol: t.symbol, amount: parseFloat(t.amount || 0), price: parseFloat(t.price || 0),
+      }));
+
+      positions.push({
+        chain,
+        protocol: protocolName,
+        protocolLogo,
+        siteUrl,
+        tvl,
+        type: posType,
+        valueUsd: parseFloat(stats.net_usd_value || 0),
+        assetUsd: parseFloat(stats.asset_usd_value || 0),
+        debtUsd: parseFloat(stats.debt_usd_value || 0),
+        supplyTokens,
+        rewardTokens,
+        debtTokens,
+        healthRate: detail.health_rate != null ? parseFloat(detail.health_rate) : null,
+        url: siteUrl,
+      });
+    });
+  });
+
+  return positions;
 }
 
-async function fetchNetWorth(wallet) {
-  if (!CONFIG.proxyUrl) return { totalUsd: 0, chainBreakdown: {} };
-  const params = new URLSearchParams({ address: wallet.address });
-  const res = await fetch(`${CONFIG.proxyUrl}/networth?${params}`);
+// EVM: Rabby API — total balance
+async function fetchRabbyNetWorth(address) {
+  const res = await fetch(`${RABBY_API}/v1/user/total_balance?id=${encodeURIComponent(address)}`);
   if (!res.ok) return { totalUsd: 0, chainBreakdown: {} };
-  return await res.json();
+  const data = await res.json();
+  const chainBreakdown = {};
+  (data.chain_list || []).forEach(c => {
+    if (c.usd_value > 0) {
+      const key = RABBY_CHAIN_MAP[c.id] || c.id;
+      chainBreakdown[key] = c.usd_value;
+    }
+  });
+  return {
+    totalUsd: data.total_usd_value || 0,
+    chainBreakdown,
+  };
 }
 
-async function fetchBalances(wallet) {
-  if (!CONFIG.proxyUrl) return [];
-  const params = new URLSearchParams({ address: wallet.address });
-  const res = await fetch(`${CONFIG.proxyUrl}/balances?${params}`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.balances || [];
+// Solana: Mobula API — token portfolio with PnL
+async function fetchMobulaPositions(address) {
+  const res = await fetch(`${MOBULA_API}/1/wallet/portfolio?wallet=${encodeURIComponent(address)}&blockchains=solana`);
+  if (!res.ok) throw new Error(`Mobula API error: ${res.status}`);
+  const json = await res.json();
+  const data = json.data || json;
+  const positions = [];
+
+  (data.assets || []).forEach(asset => {
+    const token = asset.asset || {};
+    const balance = parseFloat(asset.token_balance || 0);
+    const valueUsd = parseFloat(asset.estimated_balance || 0);
+
+    // Skip dust (< $0.01)
+    if (valueUsd < 0.01) return;
+
+    positions.push({
+      chain: 'solana',
+      protocol: token.name || 'Solana Token',
+      protocolLogo: token.logo || null,
+      siteUrl: null,
+      tvl: 0,
+      type: 'Holdings',
+      valueUsd,
+      amount: balance,
+      token: token.symbol || '',
+      price: parseFloat(asset.price || 0),
+      realizedPnl: parseFloat(asset.realized_pnl || 0),
+      unrealizedPnl: parseFloat(asset.unrealized_pnl || 0),
+      url: null,
+    });
+  });
+
+  return positions;
+}
+
+// Solana: Mobula API — net worth
+async function fetchMobulaNetWorth(address) {
+  const res = await fetch(`${MOBULA_API}/1/wallet/portfolio?wallet=${encodeURIComponent(address)}&blockchains=solana`);
+  if (!res.ok) return { totalUsd: 0, chainBreakdown: {} };
+  const json = await res.json();
+  const data = json.data || json;
+  const totalUsd = data.total_wallet_balance || 0;
+  return {
+    totalUsd,
+    chainBreakdown: { solana: totalUsd },
+  };
 }
 
 // ═══════════════════════════════════════════
@@ -123,11 +238,6 @@ function fmtUsd(val) {
   if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`;
   if (val >= 1e3) return `$${(val / 1e3).toFixed(2)}K`;
   return `$${val.toFixed(2)}`;
-}
-
-function fmtPct(val) {
-  if (val == null || isNaN(val)) return '';
-  return `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
 }
 
 function fmtTokenAmount(val) {
@@ -225,7 +335,7 @@ function renderChainFilters(positions) {
   container.innerHTML = '<button class="chain-pill active" data-chain="all">All Chains</button>';
 
   chains.forEach(chain => {
-    const meta = CONFIG.chainMeta[chain] || { name: chain, icon: '⚪' };
+    const meta = CHAIN_META[chain] || { name: chain, icon: '⚪' };
     const pill = document.createElement('button');
     pill.className = 'chain-pill';
     pill.dataset.chain = chain;
@@ -254,7 +364,7 @@ function renderSummary(positions, netWorth) {
   document.getElementById('total-positions').textContent = positions.length;
   document.getElementById('chains-active').textContent = chains.size;
   document.getElementById('protocols-count').textContent = protocols.size;
-  document.getElementById('best-apy').textContent = bestApy > 0 ? fmtPct(bestApy) : '—';
+  document.getElementById('best-apy').textContent = bestApy > 0 ? `${bestApy.toFixed(2)}%` : '—';
 }
 
 function renderPositions() {
@@ -301,7 +411,7 @@ function renderPositions() {
   });
 
   sortedChains.forEach(([chain, chainPositions]) => {
-    const meta = CONFIG.chainMeta[chain] || { name: chain, icon: '⚪', color: '#888' };
+    const meta = CHAIN_META[chain] || { name: chain, icon: '⚪', color: '#888' };
     const chainTotal = chainPositions.reduce((s, p) => s + (p.valueUsd || 0), 0);
 
     const group = document.createElement('div');
@@ -354,7 +464,8 @@ function renderPositions() {
       if (pos.realizedPnl != null || pos.unrealizedPnl != null) {
         const totalPnl = (pos.realizedPnl || 0) + (pos.unrealizedPnl || 0);
         const pnlClass = totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-        pnlHtml = `<span class="position-pnl ${pnlClass}">PnL ${fmtUsd(totalPnl)}</span>`;
+        const sign = totalPnl >= 0 ? '+' : '';
+        pnlHtml = `<span class="position-pnl ${pnlClass}">PnL ${sign}${fmtUsd(Math.abs(totalPnl))}</span>`;
       }
 
       card.innerHTML = `
@@ -439,19 +550,40 @@ async function loadPositionsForWallet(idx) {
   if (idx === state.activeWalletIdx) showState('loading');
 
   try {
-    const [posRes, nwRes, balRes] = await Promise.allSettled([
-      fetchPositions(wallet),
-      fetchNetWorth(wallet),
-      fetchBalances(wallet),
-    ]);
+    if (wallet.chain === 'solana') {
+      // Solana: use Mobula
+      const [posRes, nwRes] = await Promise.allSettled([
+        fetchMobulaPositions(wallet.address),
+        fetchMobulaNetWorth(wallet.address),
+      ]);
+      wallet.positions = posRes.status === 'fulfilled' ? posRes.value : [];
+      wallet.netWorth = nwRes.status === 'fulfilled' ? nwRes.value : null;
+      if (posRes.status === 'rejected') {
+        wallet.error = posRes.reason.message;
+      }
+    } else {
+      // EVM: use Rabby
+      const [posRes, nwRes] = await Promise.allSettled([
+        fetchRabbyPositions(wallet.address),
+        fetchRabbyNetWorth(wallet.address),
+      ]);
+      wallet.positions = posRes.status === 'fulfilled' ? posRes.value : [];
+      wallet.netWorth = nwRes.status === 'fulfilled' ? nwRes.value : null;
+      if (posRes.status === 'rejected') {
+        wallet.error = posRes.reason.message;
+      }
+    }
 
-    wallet.positions = posRes.status === 'fulfilled' ? posRes.value : [];
-    wallet.netWorth = nwRes.status === 'fulfilled' ? nwRes.value : null;
-    wallet.balances = balRes.status === 'fulfilled' ? balRes.value : [];
     wallet.loading = false;
     wallet.lastUpdated = Date.now();
 
-    if (idx === state.activeWalletIdx) renderPositions();
+    if (idx === state.activeWalletIdx) {
+      if (wallet.error && wallet.positions.length === 0) {
+        showError(wallet.error);
+      } else {
+        renderPositions();
+      }
+    }
   } catch (err) {
     wallet.loading = false;
     if (idx === state.activeWalletIdx) showError(err.message);
