@@ -622,6 +622,9 @@ async function fetchRabbyPositions(address, protocolsData) {
         symbol: t.symbol, amount: parseFloat(t.amount || 0), price: parseFloat(t.price || 0),
       }));
 
+      // Vault/position name from Rabby's detail.description (e.g. "Re Ecosystem Vault", "Clearstar High Yield USDC")
+      const positionName = detail.description || '';
+
       // Extract reward tokens
       const rewardTokens = (detail.reward_token_list || []).map(t => ({
         symbol: t.symbol, amount: parseFloat(t.amount || 0), price: parseFloat(t.price || 0),
@@ -659,6 +662,7 @@ async function fetchRabbyPositions(address, protocolsData) {
         llamaSlug,
         llamaCategory,
         type: posType,
+        positionName,
         valueUsd: parseFloat(stats.net_usd_value || 0),
         assetUsd: parseFloat(stats.asset_usd_value || 0),
         debtUsd: parseFloat(stats.debt_usd_value || 0),
@@ -1086,6 +1090,21 @@ function renderPositions() {
       // ── Expanded view: detailed position data ──
       let detailRows = '';
 
+      // Vault/position name as clickable link to the position URL (above Supply)
+      if (pos.positionName && pos.url) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Vault</span>
+            <span class="detail-value"><a href="${pos.url}" target="_blank" rel="noopener noreferrer" class="vault-link" title="Open vault ↗">${pos.positionName}</a></span>
+          </div>`;
+      } else if (pos.positionName) {
+        detailRows += `
+          <div class="position-detail-row">
+            <span class="detail-label">Vault</span>
+            <span class="detail-value">${pos.positionName}</span>
+          </div>`;
+      }
+
       // Supply tokens breakdown
       if (pos.supplyTokens && pos.supplyTokens.length > 0) {
         detailRows += `
@@ -1214,13 +1233,10 @@ function renderPositions() {
         }
       }
 
-      // Deep links
+      // Deep links — protocol name links to site, vault link is in detail rows above
       let linksHtml = '';
-      if (pos.url) {
-        linksHtml += `<a href="${pos.url}" target="_blank" rel="noopener noreferrer" class="detail-link">View Position ↗</a>`;
-      }
-      if (pos.siteUrl && pos.url !== pos.siteUrl) {
-        linksHtml += `<a href="${pos.siteUrl}" target="_blank" rel="noopener noreferrer" class="detail-link">Protocol Site ↗</a>`;
+      if (pos.siteUrl) {
+        linksHtml += `<a href="${pos.siteUrl}" target="_blank" rel="noopener noreferrer" class="detail-link">${pos.protocol || 'Protocol Site'}</a>`;
       }
 
       card.innerHTML = `
