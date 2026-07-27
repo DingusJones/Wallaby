@@ -241,13 +241,17 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
     // ZORA
     'base_zoraco': () => `https://zora.co/`,
 
-    // Morpho — V2+ vaults only, link to actual vault page with vault name slug
-    // Rabby pool.id = vault contract address; we also try pool.name for the URL slug
+    // Morpho — V2+ vaults only, link to actual vault page
+    // Rabby protocol IDs: 'morphoblue' (ETH), 'base_morphoblue' (Base)
     'morpho': () => {
       const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
       return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
     },
     'morphoblue': () => {
+      const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
+    },
+    'base_morphoblue': () => {
       const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
       return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
     },
@@ -260,26 +264,77 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
       return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
     },
 
-    // Pendle — specific market link, works without wallet connect
-    // URL pattern: app.pendle.finance/trade/markets/{marketAddr}/swap?view=pt&chain={chain}
+    // Pendle V2 — Rabby's pool.id is the PT TOKEN address, NOT the market address.
+    // The Pendle app shows "Market not found" when given a PT token as a market address.
+    // Fix: use the supply token name to build a search URL that lands on the right market.
+    // Fallback: link to the Pendle dashboard for that chain.
     'pendle': () => {
       const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
-      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+      // If we have a supply token name like "PT-40acresUSDC-27AUG2026", search for it
+      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
+        const sym = supplyTokens[0].symbol;
+        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
+          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
+        }
+      }
+      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
+    },
+    'pendle2': () => {
+      const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
+        const sym = supplyTokens[0].symbol;
+        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
+          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
+        }
+      }
+      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
     },
     'base_pendle': () => {
-      const pc = { base: 'base' }[rabbyChain] || rabbyChain;
-      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+      const pc = 'base';
+      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
+        const sym = supplyTokens[0].symbol;
+        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
+          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
+        }
+      }
+      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
+    },
+    'base_pendle2': () => {
+      const pc = 'base';
+      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
+        const sym = supplyTokens[0].symbol;
+        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
+          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
+        }
+      }
+      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
     },
     'arb_pendle': () => {
-      const pc = { arb: 'arbitrum' }[rabbyChain] || rabbyChain;
-      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+      const pc = 'arbitrum';
+      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
+        const sym = supplyTokens[0].symbol;
+        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
+          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
+        }
+      }
+      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
+    },
+    'arb_pendle2': () => {
+      const pc = 'arbitrum';
+      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
+        const sym = supplyTokens[0].symbol;
+        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
+          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
+        }
+      }
+      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
     },
 
     // Moonwell — link to specific market page for lending, vaults page for vaults
-    'moonwell': () => `https://app.moonwell.fi/`,
-    'base_moonwell': () => `https://app.moonwell.fi/`,
-    'moonwell_vault': () => `https://app.moonwell.fi/vaults`,
-    'base_moonwell_vault': () => `https://app.moonwell.fi/vaults`,
+    'moonwell': () => `https://moonwell.fi/`,
+    'base_moonwell': () => `https://moonwell.fi/`,
+    'moonwell_vault': () => `https://moonwell.fi/vaults`,
+    'base_moonwell_vault': () => `https://moonwell.fi/vaults`,
 
     // Fluid — lending protocol
     'fluid': () => `https://app.fluid.io/`,
@@ -310,9 +365,15 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
     if (aid.includes('pancakeswap')) return `https://pancakeswap.finance/pools`;
     if (aid.includes('pendle')) {
       const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
-      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
+        const sym = supplyTokens[0].symbol;
+        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
+          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
+        }
+      }
+      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
     }
-    if (aid.includes('moonwell')) return `https://app.moonwell.fi/`;
+    if (aid.includes('moonwell')) return `https://moonwell.fi/`;
     if (aid.includes('morpho')) {
       const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
       return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
@@ -632,6 +693,16 @@ async function fetchRabbyPositions(address, protocolsData) {
       const protocolId = protocol.id || '';
       const adapterId = pool.adapter_id || '';
       const rabbyChain = protocol.chain || '';
+
+      // DEBUG: log Morpho/Pendle/Moonwell positions to console for URL debugging
+      if (['morpho', 'pendle', 'moonwell'].some(k => protocolId.toLowerCase().includes(k))) {
+        console.log('[Wallaby Debug]', {
+          protocol: protocolName, protocolId, chain: rabbyChain,
+          poolId: pool.id, poolController: pool.controller, poolAddr,
+          adapterId, deepLinkResult: 'see below',
+        });
+      }
+
       const deepLink = buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, supplyTokens);
 
       // Build asset chart URL from first supply token
