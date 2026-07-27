@@ -842,6 +842,71 @@ function buildExplorerUrl(rabbyChain, poolAddr) {
 }
 
 // ═══════════════════════════════════════════
+// ON-CHAIN VAULT NAME FETCH (ERC20 name())
+// ═══════════════════════════════════════════
+// Rabby's detail.description can be stale/wrong (e.g. "Clearstar High Yield USDC" vs actual "Clearstar cbAssets Vault").
+// For vaults where we have the contract address, read name() directly from the chain.
+// Uses public RPC — one call per vault, cached in memory.
+const vaultNameCache = {};
+const RPC_ENDPOINTS = {
+  eth: 'https://eth.llamarpc.com',
+  base: 'https://base.publicnode.com',
+  arb: 'https://arbitrum.publicnode.com',
+  op: 'https://optimism.publicnode.com',
+  matic: 'https://polygon-bor-rpc.publicnode.com',
+  bsc: 'https://bsc.publicnode.com',
+  avax: 'https://avalanche-c-chain-rpc.publicnode.com',
+};
+
+async function fetchVaultName(rabbyChain, vaultAddr) {
+  if (!vaultAddr) return null;
+  const cacheKey = `${rabbyChain}:${vaultAddr.toLowerCase()}`;
+  if (cacheKey in vaultNameCache) return vaultNameCache[cacheKey];
+
+  const rpc = RPC_ENDPOINTS[rabbyChain];
+  if (!rpc) return null;
+
+  try {
+    const resp = await fetch(rpc, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'eth_call',
+        params: [{ to: vaultAddr, data: '0x06fdde03' }, 'latest'],
+        id: 1,
+      }),
+    });
+    const data = await resp.json();
+    const r = data.result;
+    if (r && r !== '0x' && r.length >= 130) {
+      const length = parseInt(r.slice(66, 130), 16);
+      if (length > 0 && length < 200) {
+        const hexData = r.slice(130, 130 + length * 2);
+        const name = bytesToHex(hexData);
+        vaultNameCache[cacheKey] = name;
+        return name;
+      }
+    }
+  } catch (e) { /* RPC failed, fall back to Rabby description */ }
+  vaultNameCache[cacheKey] = null;
+  return null;
+}
+
+function bytesToHex(hex) {
+  try {
+    return decodeURIComponent(hex.replace(/(..)/g, '%$1'));
+  } catch (e) {
+    // Fallback for non-UTF8
+    let str = '';
+    for (let i = 0; i < hex.length; i += 2) {
+      str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+    }
+    return str;
+  }
+}
+
+// ═══════════════════════════════════════════
 // FORMATTING
 // ═══════════════════════════════════════════
 function fmtUsd(val) {
@@ -944,12 +1009,12 @@ function renderChainFilters(positions) {
   }
 
   container.style.display = '';
-  container.innerHTML = '<button class="chain-pill active" data-chain="all">All Chains</button>';
+  container.innerHTML = '<button class="chain-pill' + (state.activeChainFilter === 'all' ? ' active' : '') + '" data-chain="all">All Chains</button>';
 
   chains.forEach(chain => {
     const meta = CHAIN_META[chain] || { name: chain, icon: '⚪' };
     const pill = document.createElement('button');
-    pill.className = 'chain-pill';
+    pill.className = 'chain-pill' + (state.activeChainFilter === chain ? ' active' : '');
     pill.dataset.chain = chain;
     pill.textContent = `${meta.icon} ${meta.name}`;
     container.appendChild(pill);
@@ -1389,6 +1454,19 @@ async function loadPositionsForWallet(idx) {
             if (catLabel) pos.type = catLabel;
           }
         });
+      }
+
+      // Enrich vault names on-chain — Rabby's detail.description can be stale
+      // Read ERC20 name() from the vault contract for accurate names
+      if (wallet.positions.length > 0) {
+        const vaultPositions = wallet.positions.filter(p =>
+          p.poolAddress && p.rabbyChain && p.url &&
+          p.protocol.toLowerCase().includes('morpho')
+        );
+        await Promise.all(vaultPositions.map(async pos => {
+          const onchainName = await fetchVaultName(pos.rabbyChain, pos.poolAddress);
+          if (onchainName) pos.positionName = onchainName;
+        }));
       }
 
       // Enrich positions with APY from DeFiLlama

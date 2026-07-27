@@ -6,14 +6,14 @@
   <title>Wallaby — Cross-Chain Wallet Positions</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=11">
+  <link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
 
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🦘</span>
+      <img src="wallaby-logo.webp" class="logo" alt="Wallaby">
       <h1>Wallaby</h1>
     </div>
     <div class="topbar-right">
@@ -48,13 +48,13 @@
 
   <!-- LOADING STATE -->
   <div class="loading-state" id="loading-state" style="display:none;">
-    <div class="spinner"></div>
+    <img src="wallaby-logo.webp" class="loading-icon" alt="Wallaby">
     <p>Hopping across chains...</p>
   </div>
 
   <!-- EMPTY STATE -->
   <div class="empty-state" id="empty-state">
-    <span class="empty-icon">🦘</span>
+    <img src="wallaby-logo.webp" class="empty-icon" alt="Wallaby">
     <h2>No wallets yet</h2>
     <p>Add a wallet address above to see your DeFi positions across all chains.</p>
   </div>
@@ -132,6 +132,6 @@
     <p class="footer-sub">Not financial advice. Always verify positions on the protocol's official site.</p>
   </footer>
 
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
