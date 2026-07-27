@@ -240,6 +240,24 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
 
     // ZORA
     'base_zoraco': () => `https://zora.co/`,
+
+    // Morpho — V2+ vaults only, link to actual vault page
+    'morpho': () => {
+      const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
+    },
+    'morphoblue': () => {
+      const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
+    },
+    'morpho_vault': () => {
+      const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
+    },
+    'base_morpho': () => {
+      const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
+    },
   };
 
   // Try protocol-specific link
@@ -432,14 +450,25 @@ async function fetchRabbyPositions(address) {
       const detailTypes = item.detail_types || [];
       const pool = item.pool || {};
 
-      // Determine position type
+      // Determine position type — prefer specific types, skip generic 'common'
+      const meaningfulTypes = detailTypes.filter(t => !['common', 'unknown'].includes(t));
       let posType = item.name || 'Position';
       if (detailTypes.includes('lending')) posType = 'Lending';
       else if (detailTypes.includes('yield')) posType = 'Yield';
       else if (detailTypes.includes('staking')) posType = 'Staking';
       else if (detailTypes.includes('farming')) posType = 'Farming';
-      else if (detailTypes.length > 0) {
-        posType = detailTypes[0].charAt(0).toUpperCase() + detailTypes[0].slice(1);
+      else if (detailTypes.includes('pool')) posType = 'LP';
+      else if (detailTypes.includes('vault')) posType = 'Vault';
+      else if (meaningfulTypes.length > 0) {
+        posType = meaningfulTypes[0].charAt(0).toUpperCase() + meaningfulTypes[0].slice(1);
+      } else if (detailTypes.includes('common')) {
+        // Infer from protocol name if all we have is 'common'
+        const pn = protocolName.toLowerCase();
+        if (pn.includes('aave') || pn.includes('compound') || pn.includes('spark') || pn.includes('maker')) posType = 'Lending';
+        else if (pn.includes('morpho') || pn.includes('yearn') || pn.includes('vault')) posType = 'Yield';
+        else if (pn.includes('uniswap') || pn.includes('curve') || pn.includes('balancer') || pn.includes('sushi') || pn.includes('pancake')) posType = 'LP';
+        else if (pn.includes('lido') || pn.includes('etherfi') || pn.includes('rocket')) posType = 'Staking';
+        else posType = 'Position';
       }
 
       // Extract supply tokens
@@ -461,7 +490,18 @@ async function fetchRabbyPositions(address) {
       const poolAddr = pool.id || pool.controller || null;
       const protocolId = protocol.id || '';
       const adapterId = pool.adapter_id || '';
-      const deepLink = buildPositionUrl(protocolId, adapterId, protocol.chain, poolAddr, siteUrl, supplyTokens);
+      const rabbyChain = protocol.chain || '';
+      const deepLink = buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, supplyTokens);
+
+      // Build asset chart URL from first supply token
+      const primarySymbol = supplyTokens.length > 0 ? supplyTokens[0].symbol : '';
+      const assetChartUrl = buildAssetChartUrl(primarySymbol, chain);
+
+      // Build DeFiLlama URL for protocol TVL
+      const defiLlamaUrl = buildDefiLlamaUrl(protocolName, chain);
+
+      // Build explorer URL for pool contract
+      const explorerUrl = buildExplorerUrl(rabbyChain, poolAddr);
 
       positions.push({
         chain,
@@ -480,7 +520,11 @@ async function fetchRabbyPositions(address) {
         healthRate: detail.health_rate != null ? parseFloat(detail.health_rate) : null,
         poolAddress: poolAddr,
         poolAdapter: adapterId,
+        rabbyChain,
         url: deepLink,
+        assetChartUrl,
+        defiLlamaUrl,
+        explorerUrl,
       });
     });
   });
@@ -560,6 +604,88 @@ async function fetchMobulaNetWorth(address) {
 }
 
 // ═══════════════════════════════════════════
+// ASSET CHART URL BUILDER
+// ═══════════════════════════════════════════
+// Common coins → TradingView, obscure/PT tokens → DexScreener
+const COMMON_TICKERS = new Set([
+  'BTC','ETH','USDC','USDT','DAI','WBTC','WETH','BNB','MATIC','ARB','OP','BASE',
+  'LINK','UNI','AAVE','COMP','CRV','CVX','YFI','SUSHI','CAKE','LDO','RPL','EIGEN',
+  'RETH','STETH','CBETH','WSTETH','SOL','JUP','PYTH','JTO','BONK','WIF',
+  'AVAX','FTM','SPEED','GLMR','CELO','XDAI','MNT','BLAST','ZORA',
+  'USDE','SUSDE','DEUSD','PT-USDC','PT-WSUSDE','YT-WSUSDE',
+]);
+
+function buildAssetChartUrl(symbol, chain) {
+  if (!symbol) return null;
+  const sym = symbol.toUpperCase();
+
+  // Stablecoins and common majors → TradingView
+  const tvPairs = {
+    BTC: 'BINANCE:BTCUSDT', ETH: 'BINANCE:ETHUSDT', WETH: 'BINANCE:ETHUSDT',
+    WBTC: 'BINANCE:BTCUSDT', USDC: 'BINANCE:USDCUSDT', USDT: 'BINANCE:USDTUSDT',
+    DAI: 'BINANCE:DAIUSDT', BNB: 'BINANCE:BNBUSDT', MATIC: 'BINANCE:MATICUSDT',
+    ARB: 'BINANCE:ARBUSDT', OP: 'BINANCE:OPUSDT', AVAX: 'BINANCE:AVAXUSDT',
+    LINK: 'BINANCE:LINKUSDT', UNI: 'BINANCE:UNIUSDT', AAVE: 'BINANCE:AAVEUSDT',
+    COMP: 'BINANCE:COMPUSDT', CRV: 'BINANCE:CRVUSDT', LDO: 'BINANCE:LDOUSDT',
+    SOL: 'BINANCE:SOLUSDT', JUP: 'BINANCE:JUPUSDT', EIGEN: 'BINANCE:EIGENUSDT',
+  };
+  if (tvPairs[sym]) return `https://www.tradingview.com/chart/?symbol=${tvPairs[sym]}`;
+
+  // Liquid staking → TradingView via staking derivative
+  if (['STETH','RETH','CBETH','WSTETH','RPL'].includes(sym)) return `https://www.tradingview.com/chart/?symbol=BINANCE:ETHUSDT`;
+
+  // Stablecoin variants → TradingView USDC
+  if (['USDE','SUSDE','DEUSD'].includes(sym)) return `https://www.tradingview.com/chart/?symbol=BINANCE:USDCUSDT`;
+
+  // Everything else (PT tokens, obscure) → DexScreener
+  const chainMap = {
+    ethereum: 'ethereum', base: 'base', arbitrum: 'arbitrum', optimism: 'optimism',
+    polygon: 'polygon', bsc: 'bsc', avalanche: 'avalanche', fantom: 'fantom',
+    linea: 'linea', scroll: 'scroll', blast: 'blast', zksync: 'zksync',
+    solana: 'solana', moonbeam: 'moonbeam', celo: 'celo', gnosis: 'gnosis',
+  };
+  const dsChain = chainMap[chain] || 'ethereum';
+  return `https://dexscreener.com/${dsChain}?q=${encodeURIComponent(sym)}`;
+}
+
+// ═══════════════════════════════════════════
+// DEFILLAMA PROTOCOL URL
+// ═══════════════════════════════════════════
+function buildDefiLlamaUrl(protocolName, chain) {
+  if (!protocolName) return null;
+  // Map common protocol names to DeFiLlama slugs
+  const slugMap = {
+    'aave v2': 'aave-v2', 'aave v3': 'aave-v3', 'aave': 'aave-v3',
+    'compound': 'compound-finance', 'compound v3': 'compound-finance',
+    'uniswap': 'uniswap', 'uniswap v2': 'uniswap-v2', 'uniswap v3': 'uniswap-v3',
+    'curve': 'curve-dex', 'curve finance': 'curve-dex',
+    'yearn': 'yearn-finance', 'yearn v3': 'yearn-finance',
+    'lido': 'lido', 'ether.fi': 'ether-fi', 'etherfi': 'ether-fi',
+    'balancer': 'balancer', 'convex': 'convex-finance',
+    'pancakeswap': 'pancakeswap', 'sushiswap': 'sushiswap',
+    'quickswap': 'quickswap', 'spark': 'spark-protocol',
+    'maker': 'makerdao', 'makerdao': 'makerdao', 'sky': 'sky-lending',
+    'morpho': 'morpho', 'morpho blue': 'morpho-blue',
+    'rocket pool': 'rocket-pool', 'rocketpool': 'rocket-pool',
+    'stargate': 'stargate', 'aerodrome': 'aerodrome',
+    'pendle': 'pendle', 'extra finance': 'extra-finance',
+  };
+  const pn = protocolName.toLowerCase();
+  const slug = slugMap[pn] || slugMap[pn.split(' ')[0]] || pn.replace(/\s+/g, '-');
+  return `https://defillama.com/protocol/${slug}`;
+}
+
+// ═══════════════════════════════════════════
+// EXPLORER URL FOR POOL CONTRACT
+// ═══════════════════════════════════════════
+function buildExplorerUrl(rabbyChain, poolAddr) {
+  if (!poolAddr) return null;
+  const explorer = RABBY_CHAIN_EXPLORER[rabbyChain];
+  if (!explorer) return null;
+  return explorer + poolAddr;
+}
+
+// ═══════════════════════════════════════════
 // FORMATTING
 // ═══════════════════════════════════════════
 function fmtUsd(val) {
@@ -586,14 +712,14 @@ function fmtTokenList(tokens) {
 // RENDERING
 // ═══════════════════════════════════════════
 function showState(stateName) {
-  ['loading-state', 'empty-state', 'error-state', 'summary-section', 'positions-container'].forEach(id => {
+  ['loading-state', 'empty-state', 'error-state', 'summary-section', 'positions-container', 'farming-section', 'swap-section'].forEach(id => {
     document.getElementById(id).style.display = 'none';
   });
   const map = {
     loading: 'loading-state',
     empty: 'empty-state',
     error: 'error-state',
-    positions: ['summary-section', 'positions-container'],
+    positions: ['summary-section', 'positions-container', 'farming-section', 'swap-section'],
   };
   const targets = map[stateName] || [];
   (Array.isArray(targets) ? targets : [targets]).forEach(id => {
@@ -854,10 +980,13 @@ function renderPositions() {
 
       // Asset vs debt vs net
       if (pos.assetUsd != null && pos.assetUsd > 0) {
+        const assetLink = pos.assetChartUrl
+          ? `<a href="${pos.assetChartUrl}" target="_blank" rel="noopener noreferrer" class="detail-value detail-linkable" title="View chart ↗">${fmtUsd(pos.assetUsd)}</a>`
+          : `<span class="detail-value">${fmtUsd(pos.assetUsd)}</span>`;
         detailRows += `
           <div class="position-detail-row">
             <span class="detail-label">Asset Value</span>
-            <span class="detail-value">${fmtUsd(pos.assetUsd)}</span>
+            ${assetLink}
           </div>`;
       }
 
@@ -887,22 +1016,29 @@ function renderPositions() {
           </div>`;
       }
 
-      // Pool contract address
+      // Pool contract address — link to explorer + click to copy
       if (pos.poolAddress) {
         const shortPool = pos.poolAddress.slice(0, 8) + '...' + pos.poolAddress.slice(-6);
+        const explorerHref = pos.explorerUrl || '#';
         detailRows += `
           <div class="position-detail-row">
             <span class="detail-label">Pool Contract</span>
-            <span class="detail-value mono">${shortPool}</span>
+            <span class="detail-value mono">
+              <a href="${explorerHref}" target="_blank" rel="noopener noreferrer" class="pool-link" title="View on explorer ↗">${shortPool}</a>
+              <button class="copy-btn" data-copy="${pos.poolAddress}" title="Copy address">⎘</button>
+            </span>
           </div>`;
       }
 
-      // TVL of the protocol
+      // TVL of the protocol — link to DeFiLlama
       if (pos.tvl && pos.tvl > 0) {
+        const tvlLink = pos.defiLlamaUrl
+          ? `<a href="${pos.defiLlamaUrl}" target="_blank" rel="noopener noreferrer" class="detail-linkable" title="View on DeFiLlama ↗">${fmtUsd(pos.tvl)}</a>`
+          : `<span>${fmtUsd(pos.tvl)}</span>`;
         detailRows += `
           <div class="position-detail-row">
             <span class="detail-label">Protocol TVL</span>
-            <span class="detail-value">${fmtUsd(pos.tvl)}</span>
+            <span class="detail-value">${tvlLink}</span>
           </div>`;
       }
 
@@ -962,13 +1098,27 @@ function renderPositions() {
       // Click to expand/collapse (only if there's detail to show)
       if (detailRows || linksHtml) {
         card.addEventListener('click', (e) => {
-          if (e.target.tagName === 'A' || e.target.closest('a')) return;
+          if (e.target.tagName === 'A' || e.target.closest('a') || e.target.classList.contains('copy-btn')) return;
           card.classList.toggle('collapsed');
           card.classList.toggle('expanded');
           const chevron = card.querySelector('.position-chevron');
           if (chevron) chevron.textContent = card.classList.contains('expanded') ? '⌃' : '⌄';
         });
       }
+
+      // Copy pool address to clipboard
+      card.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const addr = btn.dataset.copy;
+          navigator.clipboard.writeText(addr).then(() => {
+            const orig = btn.textContent;
+            btn.textContent = '✓';
+            btn.classList.add('copied');
+            setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1200);
+          }).catch(() => {});
+        });
+      });
 
       group.appendChild(card);
     });

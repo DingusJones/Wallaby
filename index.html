@@ -6,7 +6,7 @@
   <title>Wallaby — Cross-Chain Wallet Positions</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -94,11 +94,44 @@
     <!-- Positions render here, grouped by chain -->
   </main>
 
+  <!-- FARMING SECTION (vfat.io) -->
+  <section class="external-section" id="farming-section" style="display:none;">
+    <div class="external-card">
+      <div class="external-header">
+        <span class="external-icon">🌾</span>
+        <div class="external-info">
+          <div class="external-title">Farming Opportunities</div>
+          <div class="external-sub">Find and track yield farming pools across chains</div>
+        </div>
+      </div>
+      <div class="external-links">
+        <a href="https://vfat.io" target="_blank" rel="noopener noreferrer" class="external-link">vfat.io ↗</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- SWAP SECTION -->
+  <section class="external-section" id="swap-section" style="display:none;">
+    <div class="external-card">
+      <div class="external-header">
+        <span class="external-icon">🔄</span>
+        <div class="external-info">
+          <div class="external-title">Swap Tokens</div>
+          <div class="external-sub">Aggregated DEX swaps for the best rates across chains</div>
+        </div>
+      </div>
+      <div class="external-links">
+        <a href="https://swap.defillama.com" target="_blank" rel="noopener noreferrer" class="external-link">LlamaSwap ↗</a>
+        <a href="https://vfat.io/swap" target="_blank" rel="noopener noreferrer" class="external-link">vfat.io Swap ↗</a>
+      </div>
+    </div>
+  </section>
+
   <footer class="footer">
-    <p>Wallaby — Cross-chain DeFi positions viewer. Data from 1inch Portfolio API.</p>
+    <p>Wallaby — Cross-chain DeFi positions viewer. Data from Rabby API & DeFiLlama.</p>
     <p class="footer-sub">Not financial advice. Always verify positions on the protocol's official site.</p>
   </footer>
 
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
