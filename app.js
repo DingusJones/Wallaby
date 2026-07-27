@@ -265,70 +265,20 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
     },
 
     // Pendle V2 — Rabby's pool.id is the PT TOKEN address, NOT the market address.
-    // The Pendle app shows "Market not found" when given a PT token as a market address.
-    // Fix: use the supply token name to build a search URL that lands on the right market.
-    // Fallback: link to the Pendle dashboard for that chain.
+    // TODO: Need to find a way to map PT token → market address for exact links.
+    // For now, link to the Pendle markets page for the correct chain.
     'pendle': () => {
       const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
-      // If we have a supply token name like "PT-40acresUSDC-27AUG2026", search for it
-      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
-        const sym = supplyTokens[0].symbol;
-        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
-          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
-        }
-      }
       return `https://app.pendle.finance/trade/markets?chain=${pc}`;
     },
     'pendle2': () => {
       const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
-      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
-        const sym = supplyTokens[0].symbol;
-        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
-          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
-        }
-      }
       return `https://app.pendle.finance/trade/markets?chain=${pc}`;
     },
-    'base_pendle': () => {
-      const pc = 'base';
-      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
-        const sym = supplyTokens[0].symbol;
-        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
-          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
-        }
-      }
-      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
-    },
-    'base_pendle2': () => {
-      const pc = 'base';
-      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
-        const sym = supplyTokens[0].symbol;
-        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
-          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
-        }
-      }
-      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
-    },
-    'arb_pendle': () => {
-      const pc = 'arbitrum';
-      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
-        const sym = supplyTokens[0].symbol;
-        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
-          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
-        }
-      }
-      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
-    },
-    'arb_pendle2': () => {
-      const pc = 'arbitrum';
-      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
-        const sym = supplyTokens[0].symbol;
-        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
-          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
-        }
-      }
-      return `https://app.pendle.finance/trade/markets?chain=${pc}`;
-    },
+    'base_pendle': () => `https://app.pendle.finance/trade/markets?chain=base`,
+    'base_pendle2': () => `https://app.pendle.finance/trade/markets?chain=base`,
+    'arb_pendle': () => `https://app.pendle.finance/trade/markets?chain=arbitrum`,
+    'arb_pendle2': () => `https://app.pendle.finance/trade/markets?chain=arbitrum`,
 
     // Moonwell — link to specific market page for lending, vaults page for vaults
     'moonwell': () => `https://moonwell.fi/`,
@@ -365,12 +315,6 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
     if (aid.includes('pancakeswap')) return `https://pancakeswap.finance/pools`;
     if (aid.includes('pendle')) {
       const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
-      if (supplyTokens && supplyTokens.length > 0 && supplyTokens[0].symbol) {
-        const sym = supplyTokens[0].symbol;
-        if (sym.startsWith('PT-') || sym.startsWith('YT-')) {
-          return `https://app.pendle.finance/trade/markets?search=${encodeURIComponent(sym)}&chain=${pc}`;
-        }
-      }
       return `https://app.pendle.finance/trade/markets?chain=${pc}`;
     }
     if (aid.includes('moonwell')) return `https://moonwell.fi/`;
@@ -693,16 +637,6 @@ async function fetchRabbyPositions(address, protocolsData) {
       const protocolId = protocol.id || '';
       const adapterId = pool.adapter_id || '';
       const rabbyChain = protocol.chain || '';
-
-      // DEBUG: log Morpho/Pendle/Moonwell positions to console for URL debugging
-      if (['morpho', 'pendle', 'moonwell'].some(k => protocolId.toLowerCase().includes(k))) {
-        console.log('[Wallaby Debug]', {
-          protocol: protocolName, protocolId, chain: rabbyChain,
-          poolId: pool.id, poolController: pool.controller, poolAddr,
-          adapterId, deepLinkResult: 'see below',
-        });
-      }
-
       const deepLink = buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, supplyTokens);
 
       // Build asset chart URL from first supply token
