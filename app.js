@@ -241,7 +241,8 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
     // ZORA
     'base_zoraco': () => `https://zora.co/`,
 
-    // Morpho — V2+ vaults only, link to actual vault page
+    // Morpho — V2+ vaults only, link to actual vault page with vault name slug
+    // Rabby pool.id = vault contract address; we also try pool.name for the URL slug
     'morpho': () => {
       const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
       return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
@@ -258,6 +259,40 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
       const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
       return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
     },
+
+    // Pendle — specific market link, works without wallet connect
+    // URL pattern: app.pendle.finance/trade/markets/{marketAddr}/swap?view=pt&chain={chain}
+    'pendle': () => {
+      const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+    },
+    'base_pendle': () => {
+      const pc = { base: 'base' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+    },
+    'arb_pendle': () => {
+      const pc = { arb: 'arbitrum' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+    },
+
+    // Moonwell — link to specific market page for lending, vaults page for vaults
+    'moonwell': () => `https://app.moonwell.fi/`,
+    'base_moonwell': () => `https://app.moonwell.fi/`,
+    'moonwell_vault': () => `https://app.moonwell.fi/vaults`,
+    'base_moonwell_vault': () => `https://app.moonwell.fi/vaults`,
+
+    // Fluid — lending protocol
+    'fluid': () => `https://app.fluid.io/`,
+    'base_fluid': () => `https://app.fluid.io/`,
+
+    // Seamless — lending on Base
+    'base_seamless': () => `https://app.seamlessprotocol.com/`,
+
+    // Spark on Base
+    'base_spark': () => `https://app.spark.fi/`,
+
+    // Aerodrome — DEX on Base
+    'base_aerodrome': () => poolAddr ? `https://aerodrome.finance/pools` : `https://aerodrome.finance/`,
   };
 
   // Try protocol-specific link
@@ -273,6 +308,15 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
     if (aid.includes('curve')) return `https://curve.fi/#/ethereum/pools`;
     if (aid.includes('yearn')) return `https://yearn.fi/vaults`;
     if (aid.includes('pancakeswap')) return `https://pancakeswap.finance/pools`;
+    if (aid.includes('pendle')) {
+      const pc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.pendle.finance/trade/markets/${poolAddr}/swap?view=pt&chain=${pc}` : `https://app.pendle.finance/`;
+    }
+    if (aid.includes('moonwell')) return `https://app.moonwell.fi/`;
+    if (aid.includes('morpho')) {
+      const mc = { eth: 'ethereum', base: 'base', arb: 'arbitrum', op: 'optimism', matic: 'polygon' }[rabbyChain] || rabbyChain;
+      return poolAddr ? `https://app.morpho.org/${mc}/vault/${poolAddr}` : `https://app.morpho.org/`;
+    }
     if (aid.includes('lending')) return siteUrl || null;
   }
 
@@ -281,7 +325,87 @@ function buildPositionUrl(protocolId, adapterId, rabbyChain, poolAddr, siteUrl, 
 }
 
 // ═══════════════════════════════════════════
-// DEFILLAMA YIELD ENRICHMENT
+// DEFILLAMA PROTOCOL TVL + CATEGORIES
+// ═══════════════════════════════════════════
+// Fetch DeFiLlama /protocols once → map of name → {tvl, slug, category}
+// Used for accurate TVL (replaces Rabby's often-wrong tvl field) and proper category labels.
+let llamaProtocolsCache = null;
+
+async function fetchLlamaProtocols() {
+  if (llamaProtocolsCache) return llamaProtocolsCache;
+  try {
+    const data = await cachedFetch('https://api.llama.fi/protocols', { cacheKey: 'llama_protocols' });
+    const lookup = {};
+    (data || []).forEach(p => {
+      const name = (p.name || '').toLowerCase();
+      if (!name) return;
+      lookup[name] = {
+        tvl: parseFloat(p.tvl || 0),
+        slug: p.slug || '',
+        category: p.category || '',
+        url: p.url || '',
+      };
+    });
+    llamaProtocolsCache = lookup;
+    return lookup;
+  } catch (e) {
+    return {};
+  }
+}
+
+// Match a Rabby protocol name to DeFiLlama protocol data
+function matchLlamaProtocol(protocols, protocolName) {
+  if (!protocols || !protocolName) return null;
+  const pn = protocolName.toLowerCase();
+  // Exact match
+  if (protocols[pn]) return protocols[pn];
+  // Try without version suffixes (e.g., "aave v3" → "aave v3" already matches, but try "aave")
+  const base = pn.replace(/\s+v\d+.*$/, '');
+  if (protocols[base]) return protocols[base];
+  // Try with common variations
+  const variants = [
+    pn.replace(' ', '-'),
+    pn.replace(/\s+/g, '-'),
+    pn.replace('morpho blue', 'morpho-blue'),
+    pn.replace('moonwell lending', 'moonwell-lending'),
+    pn.replace('moonwell vaults', 'moonwell-vaults'),
+    pn.replace('compound v3', 'compound-v3'),
+    pn.replace('compound v2', 'compound-v2'),
+    pn.replace('aave v3', 'aave-v3'),
+    pn.replace('aave v2', 'aave-v2'),
+    pn.replace('uniswap v3', 'uniswap-v3'),
+    pn.replace('uniswap v2', 'uniswap-v2'),
+  ];
+  for (const v of variants) {
+    if (protocols[v]) return protocols[v];
+  }
+  // Partial match — find protocol whose name contains ours or vice versa
+  for (const key of Object.keys(protocols)) {
+    if (key.includes(pn) || pn.includes(key)) return protocols[key];
+  }
+  return null;
+}
+
+// Map DeFiLlama category → our display label
+function categoryToLabel(category) {
+  if (!category) return null;
+  const cat = category.toLowerCase();
+  if (cat.includes('lending')) return 'Lending';
+  if (cat.includes('liquid staking')) return 'Liquid Staking';
+  if (cat.includes('staking')) return 'Staking';
+  if (cat.includes('dex') || cat.includes('amm')) return 'LP';
+  if (cat.includes('yield')) return 'Yield';
+  if (cat.includes('cdp')) return 'CDP';
+  if (cat.includes('capital allocator')) return 'Yield Vault';
+  if (cat.includes('rwa')) return 'RWA';
+  if (cat.includes('bridge')) return 'Bridge';
+  if (cat.includes('restaking')) return 'Restaking';
+  if (cat.includes('money market')) return 'Money Market';
+  return null; // don't override with unknown categories
+}
+
+// ═══════════════════════════════════════════
+// DEFILLAMA YIELD ENRICHMENT (APY data)
 // ═══════════════════════════════════════════
 // Fetch DeFiLlama yields once, match positions to get APY data.
 // Matches by protocol name + supply token symbol.
@@ -433,7 +557,8 @@ async function cachedFetch(url, { cacheKey, skipCache = false } = {}) {
 }
 
 // EVM: Rabby API — full DeFi positions
-async function fetchRabbyPositions(address) {
+// protocolsData = optional DeFiLlama protocols lookup (for accurate TVL + category labels)
+async function fetchRabbyPositions(address, protocolsData) {
   const data = await cachedFetch(`${RABBY_API}/v1/user/complex_protocol_list?id=${encodeURIComponent(address)}`, { cacheKey: `rabby_pos_${address}` });
   const positions = [];
 
@@ -442,7 +567,13 @@ async function fetchRabbyPositions(address) {
     const protocolName = protocol.name || 'Unknown';
     const protocolLogo = protocol.logo_url || null;
     const siteUrl = protocol.site_url || null;
-    const tvl = protocol.tvl || 0;
+    const rabbyTvl = protocol.tvl || 0;
+
+    // Look up DeFiLlama for accurate TVL + category
+    const llama = protocolsData ? matchLlamaProtocol(protocolsData, protocolName) : null;
+    const accurateTvl = llama && llama.tvl ? llama.tvl : rabbyTvl;
+    const llamaCategory = llama ? llama.category : '';
+    const llamaSlug = llama ? llama.slug : '';
 
     (protocol.portfolio_item_list || []).forEach(item => {
       const stats = item.stats || {};
@@ -450,25 +581,35 @@ async function fetchRabbyPositions(address) {
       const detailTypes = item.detail_types || [];
       const pool = item.pool || {};
 
-      // Determine position type — prefer specific types, skip generic 'common'
-      const meaningfulTypes = detailTypes.filter(t => !['common', 'unknown'].includes(t));
+      // Determine position type — prefer DeFiLlama category, then detail_types, then protocol name inference
       let posType = item.name || 'Position';
-      if (detailTypes.includes('lending')) posType = 'Lending';
+
+      // 1. Try DeFiLlama category first (most accurate)
+      const catLabel = categoryToLabel(llamaCategory);
+      if (catLabel) {
+        posType = catLabel;
+      }
+      // 2. Try detail_types (Rabby's own classification)
+      else if (detailTypes.includes('lending')) posType = 'Lending';
       else if (detailTypes.includes('yield')) posType = 'Yield';
       else if (detailTypes.includes('staking')) posType = 'Staking';
       else if (detailTypes.includes('farming')) posType = 'Farming';
       else if (detailTypes.includes('pool')) posType = 'LP';
       else if (detailTypes.includes('vault')) posType = 'Vault';
-      else if (meaningfulTypes.length > 0) {
-        posType = meaningfulTypes[0].charAt(0).toUpperCase() + meaningfulTypes[0].slice(1);
-      } else if (detailTypes.includes('common')) {
-        // Infer from protocol name if all we have is 'common'
-        const pn = protocolName.toLowerCase();
-        if (pn.includes('aave') || pn.includes('compound') || pn.includes('spark') || pn.includes('maker')) posType = 'Lending';
-        else if (pn.includes('morpho') || pn.includes('yearn') || pn.includes('vault')) posType = 'Yield';
-        else if (pn.includes('uniswap') || pn.includes('curve') || pn.includes('balancer') || pn.includes('sushi') || pn.includes('pancake')) posType = 'LP';
-        else if (pn.includes('lido') || pn.includes('etherfi') || pn.includes('rocket')) posType = 'Staking';
-        else posType = 'Position';
+      // 3. Fall back to protocol name inference
+      else if (detailTypes.includes('common') || !catLabel) {
+        const meaningfulTypes = detailTypes.filter(t => !['common', 'unknown'].includes(t));
+        if (meaningfulTypes.length > 0) {
+          posType = meaningfulTypes[0].charAt(0).toUpperCase() + meaningfulTypes[0].slice(1);
+        } else {
+          const pn = protocolName.toLowerCase();
+          if (pn.includes('pendle')) posType = 'Yield';
+          else if (pn.includes('aave') || pn.includes('compound') || pn.includes('spark') || pn.includes('maker') || pn.includes('moonwell')) posType = 'Lending';
+          else if (pn.includes('morpho') || pn.includes('yearn') || pn.includes('vault')) posType = 'Yield';
+          else if (pn.includes('uniswap') || pn.includes('curve') || pn.includes('balancer') || pn.includes('sushi') || pn.includes('pancake') || pn.includes('aerodrome')) posType = 'LP';
+          else if (pn.includes('lido') || pn.includes('etherfi') || pn.includes('rocket')) posType = 'Liquid Staking';
+          else posType = 'Position';
+        }
       }
 
       // Extract supply tokens
@@ -498,7 +639,7 @@ async function fetchRabbyPositions(address) {
       const assetChartUrl = buildAssetChartUrl(primarySymbol, chain);
 
       // Build DeFiLlama URL for protocol TVL
-      const defiLlamaUrl = buildDefiLlamaUrl(protocolName, chain);
+      const defiLlamaUrl = buildDefiLlamaUrl(protocolName, chain, llamaSlug);
 
       // Build explorer URL for pool contract
       const explorerUrl = buildExplorerUrl(rabbyChain, poolAddr);
@@ -509,7 +650,9 @@ async function fetchRabbyPositions(address) {
         protocolId,
         protocolLogo,
         siteUrl,
-        tvl,
+        tvl: accurateTvl,
+        llamaSlug,
+        llamaCategory,
         type: posType,
         valueUsd: parseFloat(stats.net_usd_value || 0),
         assetUsd: parseFloat(stats.asset_usd_value || 0),
@@ -651,13 +794,15 @@ function buildAssetChartUrl(symbol, chain) {
 // ═══════════════════════════════════════════
 // DEFILLAMA PROTOCOL URL
 // ═══════════════════════════════════════════
-function buildDefiLlamaUrl(protocolName, chain) {
+function buildDefiLlamaUrl(protocolName, chain, llamaSlug) {
+  // If we have the actual slug from DeFiLlama API, use it
+  if (llamaSlug) return `https://defillama.com/protocol/${llamaSlug}`;
   if (!protocolName) return null;
-  // Map common protocol names to DeFiLlama slugs
+  // Fallback: map common protocol names to DeFiLlama slugs
   const slugMap = {
     'aave v2': 'aave-v2', 'aave v3': 'aave-v3', 'aave': 'aave-v3',
-    'compound': 'compound-finance', 'compound v3': 'compound-finance',
-    'uniswap': 'uniswap', 'uniswap v2': 'uniswap-v2', 'uniswap v3': 'uniswap-v3',
+    'compound': 'compound-v3', 'compound v3': 'compound-v3', 'compound v2': 'compound-v2',
+    'uniswap': 'uniswap-v3', 'uniswap v2': 'uniswap-v2', 'uniswap v3': 'uniswap-v3',
     'curve': 'curve-dex', 'curve finance': 'curve-dex',
     'yearn': 'yearn-finance', 'yearn v3': 'yearn-finance',
     'lido': 'lido', 'ether.fi': 'ether-fi', 'etherfi': 'ether-fi',
@@ -665,10 +810,12 @@ function buildDefiLlamaUrl(protocolName, chain) {
     'pancakeswap': 'pancakeswap', 'sushiswap': 'sushiswap',
     'quickswap': 'quickswap', 'spark': 'spark-protocol',
     'maker': 'makerdao', 'makerdao': 'makerdao', 'sky': 'sky-lending',
-    'morpho': 'morpho', 'morpho blue': 'morpho-blue',
+    'morpho': 'morpho-blue', 'morpho blue': 'morpho-blue',
     'rocket pool': 'rocket-pool', 'rocketpool': 'rocket-pool',
     'stargate': 'stargate', 'aerodrome': 'aerodrome',
     'pendle': 'pendle', 'extra finance': 'extra-finance',
+    'moonwell': 'moonwell-lending', 'moonwell lending': 'moonwell-lending',
+    'moonwell vaults': 'moonwell-vaults',
   };
   const pn = protocolName.toLowerCase();
   const slug = slugMap[pn] || slugMap[pn.split(' ')[0]] || pn.replace(/\s+/g, '-');
@@ -1194,14 +1341,34 @@ async function loadPositionsForWallet(idx) {
         wallet.error = posRes.reason.message;
       }
     } else {
-      // EVM: use Rabby + enrich with DeFiLlama APYs
-      const [posRes, nwRes, yieldsRes] = await Promise.allSettled([
+      // EVM: use Rabby + enrich with DeFiLlama APYs + accurate TVL/categories
+      const [posRes, nwRes, yieldsRes, protocolsRes] = await Promise.allSettled([
         fetchRabbyPositions(wallet.address),
         fetchRabbyNetWorth(wallet.address),
         fetchLlamaYields(),
+        fetchLlamaProtocols(),
       ]);
       wallet.positions = posRes.status === 'fulfilled' ? posRes.value : [];
       wallet.netWorth = nwRes.status === 'fulfilled' ? nwRes.value : null;
+
+      // Enrich positions with DeFiLlama accurate TVL + category labels
+      const protocolsData = protocolsRes.status === 'fulfilled' ? protocolsRes.value : {};
+      if (protocolsData && Object.keys(protocolsData).length > 0 && wallet.positions.length > 0) {
+        wallet.positions.forEach(pos => {
+          const llama = matchLlamaProtocol(protocolsData, pos.protocol);
+          if (llama) {
+            // Override TVL with accurate DeFiLlama value
+            if (llama.tvl) pos.tvl = llama.tvl;
+            if (llama.slug) {
+              pos.llamaSlug = llama.slug;
+              pos.defiLlamaUrl = `https://defillama.com/protocol/${llama.slug}`;
+            }
+            // Override type with DeFiLlama category if available
+            const catLabel = categoryToLabel(llama.category);
+            if (catLabel) pos.type = catLabel;
+          }
+        });
+      }
 
       // Enrich positions with APY from DeFiLlama
       if (yieldsRes.status === 'fulfilled' && wallet.positions.length > 0) {
